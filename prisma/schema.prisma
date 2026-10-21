@@ -1,0 +1,560 @@
+// AGS WEBWORKS — Business Management System
+// Prisma schema — PostgreSQL (works with local embedded dev DB, Supabase and
+// any hosted Postgres; just set DATABASE_URL). File contents (uploads &
+// avatars) are stored IN the database so the app runs on serverless hosts
+// (Vercel) where the filesystem is read-only.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================= USERS & AUTH =============================
+
+model User {
+  id                String    @id @default(cuid())
+  username          String    @unique
+  email             String    @unique
+  name              String
+  role              String // ADMIN | DEVELOPER | ACCOUNTANT
+  jobTitle          String
+  avatarUrl         String?
+  avatarData        Bytes?   // uploaded profile picture content (DB-stored: serverless-safe)
+  avatarMime        String?  // image/jpeg | image/png | image/webp
+  passwordHash      String
+  mustChangePassword Boolean  @default(true)
+  resetCode         String?
+  resetCodeExpiresAt DateTime?
+  isActive          Boolean   @default(true)
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  sessions          Session[]
+  assignedOrders    Order[]   @relation("DeveloperOrders")
+  coordinatedOrders Order[]   @relation("CoordinatorOrders")
+  assignedTasks     Task[]    @relation("AssignedTasks")
+  createdTasks      Task[]    @relation("TaskCreator")
+  assignedClients   Client[]  @relation("AssignedClients")
+  assignedSubs      MaintenanceSubscription[] @relation("SubAssignee")
+  assignedTickets   MaintenanceTicket[]       @relation("TicketAssignee")
+  attendanceRecords AttendanceRecord[]
+  activityLogs      ActivityLog[]
+  notifications     Notification[]
+  comments          Comment[]
+  createdExpenses   Expense[] @relation("ExpenseCreator")
+  uploadedFiles     FileRecord[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ============================= CLIENTS =============================
+
+model Client {
+  id               String    @id @default(cuid())
+  clientCode       String    @unique // CL-0001
+  businessName     String
+  businessCategory String?
+  contactPerson    String?
+  phone            String?
+  whatsapp         String?
+  email            String?
+  location         String?
+  city             String?
+  mapsUrl          String?
+  websiteUrl       String?
+  instagramUrl     String?
+  twitterUrl       String?
+  facebookUrl      String?
+  linkedinUrl      String?
+  serviceRequested String?
+  quotedPrice      Float?
+  agreedPrice      Float?
+  leadSource       String?
+  acquisitionDate  DateTime?
+  assignedToId     String?
+  assignedTo       User?     @relation("AssignedClients", fields: [assignedToId], references: [id])
+  status           String    @default("Lead") // Lead|Contacted|Interested|Negotiation|Won|Active Client|Lost
+  notes            String?
+  archived         Boolean   @default(false)
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  orders        Order[]
+  invoices      Invoice[]
+  payments      Payment[]
+  tasks         Task[]
+  subscriptions MaintenanceSubscription[]
+  tickets       MaintenanceTicket[]
+  maintenanceInvoices MaintenanceInvoice[]
+  files         FileRecord[]
+  comments      Comment[]
+
+  @@index([status])
+  @@index([businessName])
+}
+
+// ============================= ORDERS & PROJECTS =============================
+
+model Order {
+  id                String    @id @default(cuid())
+  orderCode         String    @unique // AGS-ORD-0001
+  clientId          String
+  client            Client    @relation(fields: [clientId], references: [id])
+  serviceType       String
+  description       String?
+  createdById       String
+  developerId       String?
+  developer         User?     @relation("DeveloperOrders", fields: [developerId], references: [id])
+  coordinatorId     String?
+  coordinator       User?     @relation("CoordinatorOrders", fields: [coordinatorId], references: [id])
+  agreedPrice       Float     @default(0)
+  startDate         DateTime?
+  internalDeadline  DateTime?
+  deliveryDate      DateTime?
+  priority          String    @default("Medium") // Low|Medium|High|Urgent
+  status            String    @default("Lead Received")
+  previewUrl        String?
+  liveUrl           String?
+  repoUrl           String?
+  estimatedCompletion DateTime?
+  deliveredAt       DateTime?
+  deliveredById     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tasks         Task[]
+  payments      Payment[]
+  invoices      Invoice[]
+  files         FileRecord[]
+  comments      Comment[]
+  revisions     OrderRevision[]
+  subscriptions MaintenanceSubscription[]
+  tickets       MaintenanceTicket[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([developerId])
+}
+
+model OrderRevision {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus String?
+  toStatus   String?
+  note       String?
+  userId     String?
+  createdAt  DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// ============================= TASKS =============================
+
+model Task {
+  id          String    @id @default(cuid())
+  taskCode    String    @unique // TASK-0001
+  title       String
+  description String?
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  orderId     String?
+  order       Order?    @relation(fields: [orderId], references: [id])
+  assigneeId  String?
+  assignee    User?     @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  creatorId   String?
+  creator     User?     @relation("TaskCreator", fields: [creatorId], references: [id])
+  priority    String    @default("Medium")
+  startDate   DateTime?
+  deadline    DateTime?
+  status      String    @default("To Do") // To Do|In Progress|Waiting|Review|Completed
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  comments Comment[]
+  files    FileRecord[]
+
+  @@index([assigneeId])
+  @@index([status])
+}
+
+// ============================= FINANCIAL =============================
+
+model Payment {
+  id           String    @id @default(cuid())
+  paymentCode  String    @unique // PAY-0001
+  clientId     String
+  client       Client    @relation(fields: [clientId], references: [id])
+  orderId      String?
+  order        Order?    @relation(fields: [orderId], references: [id])
+  amount       Float
+  direction    String    @default("in") // in = received | out = refund
+  category     String    @default("Project Payment")
+  method       String    @default("Bank Transfer")
+  reference    String?
+  notes        String?
+  receivedAt   DateTime  @default(now())
+  recordedById String?
+  invoiceId    String?
+  invoice      Invoice? @relation(fields: [invoiceId], references: [id])
+  createdAt    DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([clientId])
+  @@index([receivedAt])
+}
+
+model Invoice {
+  id                  String    @id @default(cuid())
+  invoiceCode         String    @unique // INV-2026-0001
+  type                String    @default("project") // project
+  clientId            String
+  client              Client    @relation(fields: [clientId], references: [id])
+  orderId             String?
+  order               Order?    @relation(fields: [orderId], references: [id])
+  issueDate           DateTime  @default(now())
+  dueDate             DateTime
+  status              String    @default("Draft") // Draft|Issued|Partially Paid|Paid|Overdue|Void
+  subtotal            Float     @default(0)
+  taxRate             Float     @default(0)
+  taxAmount           Float     @default(0)
+  total               Float     @default(0)
+  amountPaid          Float     @default(0)
+  notes               String?
+  terms               String?
+  voidReason          String?
+  createdById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  items   InvoiceItem[]
+  payments Payment[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Float    @default(1)
+  unitPrice   Float
+  amount      Float
+}
+
+model Expense {
+  id           String   @id @default(cuid())
+  expenseCode  String   @unique // EXP-0001
+  category     String // Hosting & Domain|Marketing|Software|Tools|Equipment|Salaries|Transport|Other
+  description  String
+  amount       Float
+  spentAt      DateTime
+  vendor       String?
+  method       String?
+  reference    String?
+  notes        String?
+  status       String   @default("Pending") // Pending|Approved|Rejected
+  createdById  String?
+  creator      User?    @relation("ExpenseCreator", fields: [createdById], references: [id])
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([category])
+  @@index([status])
+}
+
+// ============================= FILES =============================
+
+model FileRecord {
+  id           String   @id @default(cuid())
+  fileName     String
+  filePath     String
+  data         Bytes?   // file content (DB-stored: serverless-safe, private, survives redeploys)
+  mimeType     String
+  size         Int
+  category     String   @default("Project Document") // Client Logo|Photos|Content|Project Document|Quotation|Invoice|Screenshot|Delivery File|Other
+  clientId     String?
+  client       Client?  @relation(fields: [clientId], references: [id])
+  orderId      String?
+  order        Order?   @relation(fields: [orderId], references: [id])
+  taskId       String?
+  task         Task?    @relation(fields: [taskId], references: [id])
+  ticketId     String?
+  ticket       MaintenanceTicket? @relation(fields: [ticketId], references: [id])
+  uploadedById String?
+  uploader     User?    @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([clientId])
+  @@index([orderId])
+}
+
+// ============================= COMMENTS =============================
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id])
+  ticketId  String?
+  ticket    MaintenanceTicket? @relation(fields: [ticketId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([taskId])
+}
+
+// ============================= ATTENDANCE =============================
+
+model AttendanceRecord {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date          String // YYYY-MM-DD in Asia/Riyadh
+  checkInAt     DateTime?
+  checkOutAt    DateTime?
+  status        String // PRESENT | LATE | ABSENT | LEAVE | HALF_DAY
+  workedMinutes Int       @default(0)
+  note          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, date]) // one record per user per day
+  @@index([date])
+  @@index([userId])
+}
+
+// ============================= NOTIFICATIONS =============================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  type      String   @default("info") // info|order|task|payment|deadline|maintenance|alert
+  link      String?  // e.g. "orders" | "tasks" | "maintenance-invoices"
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+// ============================= ACTIVITY LOG =============================
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String // create|update|delete|login|logout|approve|reject|generate|...
+  entity    String // client|order|task|payment|invoice|expense|user|settings|subscription|ticket|plan
+  entityId  String?
+  summary   String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([entity])
+  @@index([createdAt])
+}
+
+// ============================= BUSINESS SETTINGS =============================
+
+model BusinessSettings {
+  id               String   @id @default(cuid())
+  companyName      String   @default("AGS WEBWORKS")
+  tagline          String   @default("Your Website • Our Expertise")
+  email            String?
+  phone            String?
+  website          String   @default("https://agswebworks.com")
+  address          String?
+  city             String   @default("Dammam")
+  country          String   @default("Saudi Arabia")
+  crNumber         String?
+  vatNumber        String?
+  vatEnabled       Boolean  @default(false)
+  vatRate          Float    @default(15)
+  currency         String   @default("SAR")
+  timezone         String   @default("Asia/Riyadh")
+  defaultLanguage  String   @default("en")
+  invoicePrefix    String   @default("INV")
+  maintInvoicePrefix String @default("MNT")
+  orderPrefix      String   @default("AGS-ORD")
+  clientPrefix     String   @default("CL")
+  invoiceFooter    String?
+  paymentInstructions String?
+  schedulerEnabled Boolean  @default(true)
+  schedulerLastRunAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ============================= MAINTENANCE MODULE =============================
+
+model MaintenancePlan {
+  id           String   @id @default(cuid())
+  code         String   @unique // VALUE | PRO
+  name         String
+  description  String?
+  monthlyPrice Float? // null = admin configures per client
+  features     String // JSON string array
+  updateLimit  Int? // included content updates per month, null = unlimited
+  supportLimit Int? // included support requests per month, null = unlimited
+  exclusions   String?
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions MaintenanceSubscription[]
+}
+
+model MaintenanceSubscription {
+  id                   String   @id @default(cuid())
+  subscriptionCode     String   @unique // MSUB-0001
+  clientId             String
+  client               Client   @relation(fields: [clientId], references: [id])
+  orderId              String?
+  order                Order?   @relation(fields: [orderId], references: [id])
+  domain               String?
+  websiteUrl           String?
+  planId               String
+  plan                 MaintenancePlan @relation(fields: [planId], references: [id])
+  planType             String // VALUE | PRO | CUSTOM
+  monthlyFee           Float
+  startDate            DateTime
+  billingDay           Int // day of month 1-31
+  nextBillingDate      DateTime
+  status               String   @default("Pending") // Pending|Active|Payment Due|Overdue|Paused|Cancelled|Expired
+  paymentMethod        String?
+  lastPaymentDate      DateTime?
+  lastMaintenanceDate  DateTime?
+  nextMaintenanceDate  DateTime?
+  assignedToId         String?
+  assignedTo           User?    @relation("SubAssignee", fields: [assignedToId], references: [id])
+  contractTerms        String?
+  renewalNotes         String?
+  cancelledAt          DateTime?
+  pauseReason          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  invoices MaintenanceInvoice[]
+  tickets  MaintenanceTicket[]
+  logs     MaintenanceActivityLog[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model MaintenanceInvoice {
+  id                  String   @id @default(cuid())
+  invoiceCode         String   @unique // MNT-2026-0001
+  subscriptionId      String
+  subscription        MaintenanceSubscription @relation(fields: [subscriptionId], references: [id])
+  clientId            String
+  client              Client   @relation(fields: [clientId], references: [id])
+  issueDate           DateTime @default(now())
+  dueDate             DateTime
+  billingPeriodStart  DateTime
+  billingPeriodEnd    DateTime
+  status              String   @default("Draft") // Draft|Issued|Partially Paid|Paid|Overdue|Void
+  packagePrice        Float
+  taxRate             Float    @default(0)
+  taxAmount           Float    @default(0)
+  total               Float
+  amountPaid          Float    @default(0)
+  notes               String?
+  terms               String?
+  generatedBy         String? // "auto-scheduler" | "manual:<userId>"
+  generationError     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  payments MaintenancePayment[]
+
+  @@unique([subscriptionId, billingPeriodStart]) // prevent duplicate recurring invoices
+  @@index([status])
+  @@index([clientId])
+}
+
+model MaintenancePayment {
+  id           String   @id @default(cuid())
+  invoiceId    String
+  invoice      MaintenanceInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount       Float
+  method       String
+  reference    String?
+  notes        String?
+  receivedAt   DateTime @default(now())
+  recordedById String?
+  createdAt    DateTime @default(now())
+}
+
+model MaintenanceTicket {
+  id                  String   @id @default(cuid())
+  ticketCode          String   @unique // MT-0001
+  subscriptionId      String?
+  subscription        MaintenanceSubscription? @relation(fields: [subscriptionId], references: [id])
+  clientId            String
+  client              Client   @relation(fields: [clientId], references: [id])
+  orderId             String?
+  order               Order?   @relation(fields: [orderId], references: [id])
+  planSnapshot        String?
+  issue               String
+  priority            String   @default("Medium")
+  assigneeId          String?
+  assignee            User?    @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  expectedCompletion  DateTime?
+  workPerformed       String?
+  status              String   @default("New") // New|In Progress|Waiting for Client|Completed|Closed
+  outOfScope          Boolean  @default(false)
+  completedAt         DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  comments Comment[]
+  files    FileRecord[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model MaintenanceActivityLog {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  subscription   MaintenanceSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  userId         String?
+  action         String
+  summary        String
+  createdAt      DateTime @default(now())
+
+  @@index([subscriptionId])
+}
