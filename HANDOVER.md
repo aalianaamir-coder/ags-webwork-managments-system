@@ -39,25 +39,21 @@ bun run build && bun run start
 
 > Always start via the package scripts (`bun run dev` / `npm run dev`). Executing the Next binary directly under the Bun runtime breaks Prisma client resolution (all API routes return 500).
 
-The seed creates three accounts (administrator / developer / accountant roles). **Initial passwords equal the usernames** (sharjeel / gufran / addan) per the owner's policy — rotate to strong passwords before real use: `bunx tsx prisma/reset-passwords.ts --strong` (forces first-login change, writes `CREDENTIALS.txt`).
+The seed creates three accounts (administrator / developer / accountant roles), each with a random temporary password written to the ignored `CREDENTIALS.txt`. Each member must change their password at first sign-in. The admin can add more visible team members through the app. There is no hidden account or shared-password bypass.
 
 **Optional demo data:** `bun run db:demo` populates a *fresh* database with three clearly-fictional `[DEMO]`-tagged clients, an order, invoice, payments, a maintenance subscription and a ticket — useful for training sessions. Remove with `bun run db:demo-remove`. It refuses to run on a database that already has real clients.
 
 ## 3. Password & account policy (tell the client)
 
-- Initial passwords equal the usernames by default; rotate with `bunx tsx prisma/reset-passwords.ts --strong` for production use.
+- Initial passwords are random temporary values written to `CREDENTIALS.txt`; users must change them at first sign-in. Rotate all seeded passwords with `bunx tsx prisma/reset-passwords.ts` if the file is exposed.
 - Passwords are stored as scrypt hashes — they can never be recovered, only reset.
 - An administrator issues one-time reset codes from *Team Members* (valid 30 minutes, single use).
 - All sessions are invalidated when a password changes.
 - Login attempts are rate-limited (10 per 15 minutes per username); reset-code guessing is limited to 6 per 15 minutes.
 
-### 3b. Emergency access (owner-only feature — MUST be disabled for client deliveries)
-
-If the `EMERGENCY_PASSWORD` environment variable is set, that single value signs in to any active account, even after personal password changes. It exists so the owner can never be locked out. Properties: value lives only in the environment (never in source/UI/API responses), timing-safe comparison, rate limits apply, and every use is logged in the activity log as **“EMERGENCY ACCESS used”**. The delivered package ships with it **unset (disabled)** — leave it unset for clients, and never commit the value to git.
-
 ## 4. Go-live checklist
 
-1. **Database:** PostgreSQL (Supabase recommended — free tier is enough). Set `DATABASE_URL` (pooler URL for Vercel, direct URL for one-off `db:push`), run `bun run db:push` — schema + 3 accounts are created automatically. **The schema is already PostgreSQL; no provider switch is needed.**
+1. **Database:** PostgreSQL (Supabase recommended — free tier is enough). Set `DATABASE_URL` to the Supabase direct connection and run `bun run db:push` once from a trusted machine. Use the pooler URL for Vercel runtime. Schema pushes are intentionally not part of Vercel builds, and destructive changes require review. **The schema is already PostgreSQL; no provider switch is needed.**
 2. **Hosting:** Vercel works with zero code changes (import repo → set env vars → deploy; `vercel.json` registers the scheduler cron). A VPS also works (`bun run build && bun run start` behind Nginx/Caddy).
 3. **HTTPS:** automatic on Vercel; on VPS serve behind Nginx/Caddy with TLS. Cookies become `secure` when `NODE_ENV=production`; HSTS is already sent.
 4. **Scheduler:** set `SCHEDULER_KEY` (e.g. `openssl rand -hex 32`); on Vercel also set `CRON_SECRET` to the same value so the built-in cron is authorized.
@@ -76,7 +72,6 @@ If the `EMERGENCY_PASSWORD` environment variable is set, that single value signs
 | Business settings (VAT, currency, invoice footer) | *Settings* in the app (CEO account) |
 | Private file storage | **inside the database** (`FileRecord.data`) — serverless-safe, access-controlled, never inside `/public` |
 | Uploaded profile pictures | **inside the database** (`User.avatarData`) — served only to signed-in members |
-| Emergency access (optional) | `EMERGENCY_PASSWORD` environment variable (see §3b) |
 | Local dev database | embedded PostgreSQL, data in `db-pg-data/` (gitignored) |
 
 ## 6. Rollback

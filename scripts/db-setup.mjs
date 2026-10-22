@@ -34,6 +34,11 @@ function parseEnv(file) {
 const fileEnv = { ...parseEnv(path.join(ROOT, '.env')), ...parseEnv(path.join(ROOT, '.env.local')) }
 const env = { ...fileEnv, ...process.env }
 
+if (env.VERCEL === '1') {
+  console.error('Database schema changes must be applied manually from a trusted environment, not during a Vercel build.')
+  process.exit(1)
+}
+
 const isSandboxSqlite = !env.DATABASE_URL || env.DATABASE_URL.startsWith('file:')
 
 function run(cmd, args, extraEnv = {}) {
@@ -59,7 +64,7 @@ if (isSandboxSqlite) {
 
 // 2. Schema
 console.log('\n==> prisma db push')
-if (await run('prisma', ['db', 'push', '--accept-data-loss']) !== 0) process.exit(1)
+if (await run('prisma', ['db', 'push']) !== 0) process.exit(1)
 
 // 3. Seed only when the users table is empty (protects existing data)
 const { PrismaClient } = await import('@prisma/client')
@@ -81,4 +86,4 @@ if (userCount > 0) {
 
 console.log('\n==> empty database — seeding initial accounts, plans & settings')
 if (await run('tsx', ['prisma/seed.ts']) !== 0) process.exit(1)
-console.log('\n==> Database ready. Default sign-in: username = password (sharjeel / gufran / addan).')
+console.log('\n==> Database ready. Temporary account passwords are in the ignored CREDENTIALS.txt file.')

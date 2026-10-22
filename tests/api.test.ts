@@ -267,6 +267,14 @@ describe("authentication", () => {
     }
     expect(last).toBe(429);
   }, 30_000);
+
+  test("admin dashboard includes twelve months of chart data", async () => {
+    const { res, data } = await call(admin, "GET", "/api/dashboard");
+    expect(res.status).toBe(200);
+    expect(data.revenueSeries).toHaveLength(12);
+    expect(data.revenueSeries[0]).toHaveProperty("revenue");
+    expect(data.revenueSeries[0]).toHaveProperty("expenses");
+  });
 });
 
 describe("permission boundaries (server-enforced)", () => {

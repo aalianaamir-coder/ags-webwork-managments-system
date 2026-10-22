@@ -59,6 +59,7 @@ model Session {
   createdAt DateTime @default(now())
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
 // ============================= CLIENTS =============================

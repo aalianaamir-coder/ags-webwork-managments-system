@@ -25,17 +25,13 @@ A complete, secure, production-ready internal management system for **AGS WEBWOR
 
 ## 2. The Three Accounts
 
-Accounts are created by the seed script (`prisma/seed.ts`) — **never hardcoded in the frontend**. Per the owner's policy (v2.1), each account's **initial password equals its username** (e.g. `sharjeel` / `sharjeel`) so the team can sign in immediately; passwords are documented in `CREDENTIALS.txt` (chmod 600). For client handover, rotate to strong passwords: `bunx tsx prisma/reset-passwords.ts --strong` (forces first-login change).
+Accounts are created by the seed script (`prisma/seed.ts`) — **never hardcoded in the frontend**. Each new account receives a random temporary password saved to the ignored `CREDENTIALS.txt` file and must change it at first sign-in. Use the in-app admin team controls to add or manage accounts; there is no hidden account or shared password.
 
 | Member | Username | Role | Access |
 |---|---|---|---|
 | Sharjeel | `sharjeel` | ADMIN — CEO & Marketing | Everything: all modules, settings, team management, expense approvals, package pricing |
 | Gufran | `gufran` | DEVELOPER — Web Developer | Assigned orders/projects only, dev-stage status updates, website links, tasks, assigned maintenance tickets, files. **No financial data, no settings, no user management** |
 | Addan | `addan` | ACCOUNTANT — Order Coordinator | Orders & coordination, payments, invoices, expenses (create), maintenance billing & invoices, reports. **No user management, no admin settings** |
-
-### 2b. Emergency access (owner-controlled, optional)
-
-If the `EMERGENCY_PASSWORD` environment variable is set, that single password signs in to **any active account** — even after personal password changes — so the owner can never be locked out. The value lives only in the environment (never in source code, never in the UI, never returned by any API), comparison is timing-safe, normal rate limits still apply, and every use is recorded in the activity log as **“EMERGENCY ACCESS used”**. Disable it (leave unset) before handing the system to a client — the clean delivery package ships with it disabled.
 
 ## 3. Tech Stack & What To Connect
 
@@ -69,7 +65,6 @@ Production example (PostgreSQL / Supabase — see §6 for the exact Supabase URL
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/postgres?pgbouncer=true&connection_limit=1"
 NODE_ENV=production
 SCHEDULER_KEY="<long-random-string>"   # also set as CRON_SECRET on Vercel
-EMERGENCY_PASSWORD="<owner-only>"     # optional — see §2b; DISABLE for client handover
 ```
 
 | Variable | Required | Purpose |
@@ -77,7 +72,6 @@ EMERGENCY_PASSWORD="<owner-only>"     # optional — see §2b; DISABLE for clien
 | `DATABASE_URL` | yes | PostgreSQL connection string (Supabase pooler URL on Vercel). When missing locally, the embedded dev PostgreSQL is used automatically |
 | `NODE_ENV` | prod | Set to `production` → secure cookies over HTTPS |
 | `SCHEDULER_KEY` | recommended | Secret for the recurring-invoice cron endpoint. Accepts `x-scheduler-key` header or `Authorization: Bearer` (Vercel Cron). Generate with `openssl rand -hex 32`. Also set as `CRON_SECRET` in Vercel |
-| `EMERGENCY_PASSWORD` | optional | Owner break-glass password — signs in to any active account; audited in the activity log. See §2b |
 
 Never expose `DATABASE_URL`, `SCHEDULER_KEY` or any secrets to the client — all sensitive operations run in server-side API routes.
 
@@ -89,7 +83,7 @@ bun run db:push      # start embedded PostgreSQL (if needed) + create schema + s
 bun run dev          # http://localhost:3000
 ```
 
-> `db:push` is a full self-healing setup: it starts the local embedded PostgreSQL when needed, pushes the schema, and seeds the 3 accounts + plans + settings **only when the database is empty** (existing data is never overwritten). Sign in with username = password (sharjeel / gufran / addan) or your emergency password if set.
+> `db:push` starts local embedded PostgreSQL when needed, safely pushes the Prisma schema, and seeds accounts + plans + settings only when the database has no users. Existing account data is preserved. It does not accept data loss and refuses to run inside a Vercel build. On first setup, use the temporary passwords in the ignored `CREDENTIALS.txt` file.
 
 > Always start the dev server through the package script (`bun run dev` / `npm run dev`). Do **not** execute the Next binary directly with Bun (e.g. `bun next dev` or `bun node_modules/next/dist/bin/next dev`) — Bun-as-runtime + Turbopack cannot resolve the generated Prisma client and every API route will 500. The package scripts run Next under Node, which is fully supported.
 
@@ -116,7 +110,7 @@ The schema is already PostgreSQL — no code changes are needed, only a connecti
 2. In **Project Settings → Database → Connection string** you will find two URLs:
    - **Transaction pooler** (port `6543`, has `?pgbouncer=true&connection_limit=1`) — use this as the runtime `DATABASE_URL` (Vercel, serverless-safe).
    - **Direct connection** (port `5432`) — use this for one-off commands from your machine (`db:push`, `db:seed`).
-3. Initialize and seed from your machine (creates all tables + the 3 accounts + plans + settings):
+3. Initialize and seed once from a trusted machine using the Supabase **direct** connection (creates tables + the 3 accounts + plans + settings; schema changes are intentionally not run during Vercel builds):
    ```bash
    DATABASE_URL="postgresql://postgres.REF:PASSWORD@db.REF.supabase.co:5432/postgres" bun run db:push
    ```
@@ -132,9 +126,8 @@ The schema is already PostgreSQL — no code changes are needed, only a connecti
    - `DATABASE_URL` = the Supabase **Transaction pooler** URL (port 6543)
    - `SCHEDULER_KEY` = a long random string (`openssl rand -hex 32`)
    - `CRON_SECRET` = the **same value** as `SCHEDULER_KEY` (authorizes the built-in Vercel Cron)
-   - `EMERGENCY_PASSWORD` = your owner break-glass password (optional, see §2b)
 4. Deploy. `vercel.json` already registers a daily cron for the maintenance scheduler (see below).
-5. Sign in at `https://<your-project>.vercel.app` — username = password, or the emergency password.
+5. Sign in at `https://<your-project>.vercel.app` with the temporary credentials generated during database setup; change each password at first sign-in.
 
 Notes for Vercel:
 - The build script runs `prisma generate` automatically — no manual steps.
@@ -184,7 +177,7 @@ The scheduler:
 
 ## 8. Security Model
 
-- Passwords: scrypt (64-byte derived key + per-user salt), never logged, never sent to the client.
+- Passwords: scrypt (64-byte derived key + per-user salt), never logged, never sent to the client. Seeded passwords are random temporary values and must be changed at first sign-in; no universal password can authenticate as another account.
 - Brute-force protection: login and password-reset attempts are rate-limited per IP + username (10 sign-in attempts / 15 min; 6 reset attempts / 15 min) with clear 429 responses.
 - Business codes (CL-0001, AGS-ORD-0001, …) are generated from the highest existing sequence — deleting records can never cause duplicate-code failures — and creation retries automatically under concurrency.
 - Sessions: opaque 256-bit tokens; only SHA-256 hashes stored in the DB; httpOnly/SameSite cookies; 7-day expiry; invalidated on password change.

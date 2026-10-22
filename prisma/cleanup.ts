@@ -1,9 +1,10 @@
 // AGS WEBWORKS — post-test cleanup
-// Removes ALL test records created during E2E verification and restores the
-// initial account passwords (username = password) so the system starts clean.
+// Removes ALL test records created during E2E verification and resets the
+// seeded accounts to random temporary passwords.
 
 import { PrismaClient } from '@prisma/client'
-import { randomBytes, scryptSync } from 'crypto'
+import { randomBytes, randomInt, scryptSync } from 'crypto'
+import { writeFileSync } from 'fs'
 
 const db = new PrismaClient()
 
@@ -11,6 +12,13 @@ function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex')
   const hash = scryptSync(password, salt, 64).toString('hex')
   return `scrypt$${salt}$${hash}`
+}
+
+function generateTemporaryPassword(name: string): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*?'
+  let password = `AGS-${name}-`
+  for (let i = 0; i < 16; i++) password += chars[randomInt(0, chars.length)]
+  return password
 }
 
 async function main() {
@@ -77,31 +85,35 @@ async function main() {
   }
   console.log('✓ ID counters reset (next codes will be CL-0001, AGS-ORD-0001, …)')
 
-  // ---- Restore initial credentials (username = password) ----
+  // ---- Reset seeded accounts to random temporary credentials ----
   let restored = 0
+  const credentials = ['AGS WEBWORKS — Temporary Login Credentials', `Generated ${new Date().toISOString()}`, 'Change each password at first sign-in.', '']
   for (const username of ['sharjeel', 'gufran', 'addan']) {
     const user = await db.user.findUnique({ where: { username } })
     if (!user) continue
+    const password = generateTemporaryPassword(user.name)
     await db.user.update({
       where: { id: user.id },
       data: {
-        passwordHash: hashPassword(username),
-        mustChangePassword: false,
+        passwordHash: hashPassword(password),
+        mustChangePassword: true,
         resetCode: null,
         resetCodeExpiresAt: null,
         isActive: true,
       },
     })
     restored++
-    console.log(`✓ ${user.name}: initial password restored (username = password)`)
+    credentials.push(`${user.name} username: ${username}`, `${user.name} temporary password: ${password}`, '')
+    console.log(`✓ ${user.name}: random temporary password set`)
   }
+  writeFileSync('CREDENTIALS.txt', credentials.join('\n') + '\n', { mode: 0o600 })
 
   // ---- Leave one clean activity-log entry ----
   await db.activityLog.create({
     data: { action: 'system', entity: 'settings', summary: 'System prepared for first use — test data removed, accounts secured' },
   })
 
-  console.log(`\nCleanup complete. ${restored} account(s) restored to seeded credentials.`)
+  console.log(`\nCleanup complete. ${restored} account(s) reset; temporary credentials saved to CREDENTIALS.txt.`)
   console.log('The system now starts empty and secure, exactly as delivered.')
 }
 

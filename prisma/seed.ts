@@ -2,11 +2,8 @@
 // Creates the three team accounts, the maintenance plans, and business
 // settings. NO fake business data is seeded.
 //
-// PASSWORD POLICY (per owner request, v2.1): each account's initial password
-// equals its username (e.g. sharjeel / sharjeel) so the team can sign in
-// immediately. For production/client deliveries, rotate to strong passwords
-// (see README "Credential rotation") and set EMERGENCY_PASSWORD off.
-// Credentials are documented in CREDENTIALS.txt (never exposed to the frontend).
+// Each new account receives a random temporary password and must change it at
+// first sign-in. Credentials are written to the ignored CREDENTIALS.txt file.
 //
 // SAFETY: the output file defaults to CREDENTIALS.txt but can be overridden with
 // the CREDENTIALS_FILE env var — e.g. when seeding an isolated TEST database:
@@ -31,11 +28,6 @@ function generateStrongPassword(name: string): string {
   let pwd = ''
   for (let i = 0; i < 16; i++) pwd += all[randomInt(0, all.length)]
   return `AGS-${name}-${pwd}`
-}
-
-/** Initial password = the profile name (username), per owner request. */
-function initialPasswordFor(username: string): string {
-  return username
 }
 
 export function hashPassword(password: string): string {
@@ -115,8 +107,7 @@ async function main() {
   credentials.push('==============================================================')
   credentials.push(' AGS WEBWORKS — Initial Login Credentials (PRIVATE)')
   credentials.push(' Generated ' + new Date().toISOString())
-  credentials.push(' Sign-in: username = password (e.g. sharjeel / sharjeel).')
-  credentials.push(' Rotate to strong passwords before client handover — see README.')
+  credentials.push(' Random temporary passwords; change each password at first sign-in.')
   credentials.push('==============================================================')
   credentials.push('')
 
@@ -126,12 +117,12 @@ async function main() {
       credentials.push(`${acc.name.padEnd(10)} — existing account kept (username: ${acc.username})`)
       continue
     }
-    const password = initialPasswordFor(acc.username)
+    const password = generateStrongPassword(acc.name)
     const user = await db.user.create({
       data: {
         ...acc,
         passwordHash: hashPassword(password),
-        mustChangePassword: false, // initial password is known to the owner
+        mustChangePassword: true,
       },
     })
     await db.activityLog.create({
