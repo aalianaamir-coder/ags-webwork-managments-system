@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useApp, navGroupsForRole, type SessionUser, type ViewId } from '@/lib/store'
 import { t } from '@/lib/i18n'
-import { api, timeAgo } from '@/lib/client-utils'
+import { api, timeAgo, displayRole } from '@/lib/client-utils'
 import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
 import {
@@ -158,7 +158,7 @@ export default function AppShell({ user, onLogout, onPasswordChanged }: { user: 
 
   // ---- Maintenance scheduler auto-trigger (every 5 min while a billing role is online) ----
   useEffect(() => {
-    if (user.role !== 'ADMIN' && user.role !== 'ACCOUNTANT') return
+    if (user.role !== 'ADMIN' && user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTANT') return
     const run = async () => {
       if (schedulerBusy.current) return
       schedulerBusy.current = true
@@ -277,7 +277,7 @@ export default function AppShell({ user, onLogout, onPasswordChanged }: { user: 
                 <DropdownMenuLabel>
                   <p className="text-sm font-medium">{user.name}</p>
                   <p className="text-xs text-muted-foreground font-normal">{user.email}</p>
-                  <Badge variant="secondary" className="mt-1.5 text-[10px]">{user.role}</Badge>
+                  <Badge variant="secondary" className="mt-1.5 text-[10px]">{displayRole(user.role)}</Badge>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setView('settings')}><Settings className="w-4 h-4 mr-2" /> Settings &amp; profile</DropdownMenuItem>

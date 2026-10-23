@@ -51,6 +51,7 @@ import {
   TICKET_STATUSES,
   PRIORITIES,
   PAYMENT_METHODS,
+  isAdminRole,
 } from "@/lib/client-utils";
 import { useApp } from "@/lib/store";
 import {
@@ -182,7 +183,7 @@ type TeamMember = { id: string; name: string; role: string };
 export default function MaintenanceView() {
   const { user, dataVersion, bumpData } = useApp();
   const isDev = user?.role === "DEVELOPER";
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = isAdminRole(user?.role);
   const isAccountant = user?.role === "ACCOUNTANT";
   const canBilling = isAdmin || isAccountant;
 
@@ -307,7 +308,7 @@ function SubscriptionsTab() {
     reference: "",
   });
 
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = isAdminRole(user?.role);
 
   const [form, setForm] = useState({
     clientId: "",
@@ -2147,7 +2148,7 @@ function TicketsTab() {
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
                         )}
-                        {user?.role === "ADMIN" && (
+                        {isAdminRole(user?.role) && (
                           <>
                             <Button
                               variant="ghost"

@@ -1,6 +1,7 @@
 // AGS WEBWORKS — sanitized DEMO data (clearly fictional, safe for client demos)
-// Usage: bunx tsx prisma/demo-data.ts            (create demo data if none exists)
-//        bunx tsx prisma/demo-data.ts --remove   (remove demo data)
+// Usage: npm run db:demo               (create demo data if none exists)
+//        npm run db:demo-remove        (remove demo data)
+//        npx tsx prisma/demo-data.ts --force   (override the fresh-DB guard)
 //
 // SAFETY:
 //  - Refuses to run when the database already contains real business data
@@ -41,7 +42,7 @@ async function createDemo() {
   const existing = await db.client.count()
   if (existing > 0 && !force) {
     console.error(`✗ This database already has ${existing} client record(s) — demo data is only inserted into a fresh database.`)
-    console.error('  To force anyway, run: bunx tsx prisma/demo-data.ts --force')
+    console.error('  To force anyway, run: npx tsx prisma/demo-data.ts --force')
     process.exit(1)
   }
 
@@ -317,14 +318,15 @@ async function createDemo() {
   }
 
   console.log('\nDemo data created. All records are fictional and tagged [DEMO].')
-  console.log('Remove anytime with: bunx tsx prisma/demo-data.ts --remove')
+  console.log('Remove anytime with: npm run db:demo-remove')
+}
+
+async function main() {
+  if (remove) await removeDemo()
+  else await createDemo()
 }
 
 main()
-  .then(async () => {
-    if (remove) await removeDemo()
-    else await createDemo()
-  })
   .catch((e) => {
     console.error(e)
     process.exit(1)

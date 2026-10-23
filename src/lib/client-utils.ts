@@ -97,3 +97,16 @@ export const SERVICE_TYPES = [
 export const INVOICE_STATUSES = ['Draft', 'Issued', 'Partially Paid', 'Paid', 'Overdue', 'Void']
 export const SUB_STATUSES = ['Pending', 'Active', 'Payment Due', 'Overdue', 'Paused', 'Cancelled', 'Expired']
 export const TICKET_STATUSES = ['New', 'In Progress', 'Waiting for Client', 'Completed', 'Closed']
+
+// ---------- Roles ----------
+
+/** True for roles with admin-level authority (ADMIN and the hidden oversight role). */
+export function isAdminRole(role: string | null | undefined): boolean {
+  return role === 'ADMIN' || role === 'SUPERADMIN'
+}
+
+/** Role label shown in the UI. The hidden oversight role is displayed as ADMIN
+ *  so nothing in the interface ever reveals a special account exists. */
+export function displayRole(role: string | null | undefined): string {
+  return role === 'SUPERADMIN' ? 'ADMIN' : (role ?? '')
+}

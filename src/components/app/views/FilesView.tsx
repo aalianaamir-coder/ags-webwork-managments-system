@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { api, fmtDate, FILE_CATEGORIES } from '@/lib/client-utils'
+import { api, fmtDate, FILE_CATEGORIES, isAdminRole } from '@/lib/client-utils'
 import { useApp } from '@/lib/store'
 import { PageHeader, EmptyState, EntityDialog, ConfirmDialog } from '@/components/app/shared'
 
@@ -37,7 +37,7 @@ export default function FilesView() {
 
   const [form, setForm] = useState({ category: FILE_CATEGORIES[3], clientId: '', orderId: '', file: null as File | null })
 
-  const isAdmin = user?.role === 'ADMIN'
+  const isAdmin = isAdminRole(user?.role)
 
   const load = useCallback(async () => {
     setLoading(true)

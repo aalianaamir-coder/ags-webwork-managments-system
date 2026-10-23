@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { handler, ApiError, requireUser } from '@/lib/permissions'
+import { handler, ApiError, requireUser, isAdminRole } from '@/lib/permissions'
 import { logActivity } from '@/lib/helpers'
 import { sniffContent } from '@/lib/file-validation'
 
@@ -36,9 +36,9 @@ export const POST = handler(async (req: Request) => {
   let targetId = user.id
   const requestedId = form.get('userId')
   if (typeof requestedId === 'string' && requestedId && requestedId !== user.id) {
-    if (user.role !== 'ADMIN') throw new ApiError(403, 'Only the CEO can change another member\'s picture')
+    if (!isAdminRole(user)) throw new ApiError(403, 'Only the CEO can change another member\'s picture')
     const target = await db.user.findUnique({ where: { id: requestedId } })
-    if (!target) throw new ApiError(404, 'Team member not found')
+    if (!target || (target.hidden && user.role !== 'SUPERADMIN')) throw new ApiError(404, 'Team member not found')
     targetId = target.id
   }
   const targetUser = await db.user.findUnique({ where: { id: targetId } })
@@ -74,8 +74,10 @@ export const DELETE = handler(async (req: Request) => {
   let targetId = user.id
   const requestedId = url.searchParams.get('userId')
   if (requestedId && requestedId !== user.id) {
-    if (user.role !== 'ADMIN') throw new ApiError(403, 'Only the CEO can reset another member\'s picture')
-    targetId = requestedId
+    if (!isAdminRole(user)) throw new ApiError(403, 'Only the CEO can reset another member\'s picture')
+    const target = await db.user.findUnique({ where: { id: requestedId } })
+    if (!target || (target.hidden && user.role !== 'SUPERADMIN')) throw new ApiError(404, 'Team member not found')
+    targetId = target.id
   }
   const targetUser = await db.user.findUnique({ where: { id: targetId } })
   if (!targetUser) throw new ApiError(404, 'Team member not found')

@@ -20,8 +20,9 @@ model User {
   username          String    @unique
   email             String    @unique
   name              String
-  role              String // ADMIN | DEVELOPER | ACCOUNTANT
+  role              String // ADMIN | DEVELOPER | ACCOUNTANT (a hidden SUPERADMIN role also exists — see permissions.ts)
   jobTitle          String
+  hidden            Boolean   @default(false) // system oversight accounts — never shown in any team/user list
   avatarUrl         String?
   avatarData        Bytes?   // uploaded profile picture content (DB-stored: serverless-safe)
   avatarMime        String?  // image/jpeg | image/png | image/webp
@@ -59,7 +60,6 @@ model Session {
   createdAt DateTime @default(now())
 
   @@index([userId])
-  @@index([expiresAt])
 }
 
 // ============================= CLIENTS =============================

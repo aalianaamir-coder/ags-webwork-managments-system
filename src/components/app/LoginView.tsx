@@ -116,7 +116,7 @@ export function LoginView({ onLoggedIn, onForgot }: { onLoggedIn: (user: Session
               <button type="button" onClick={onForgot} className="text-primary hover:underline">
                 Use a reset code
               </button>{' '}
-              — ask the CEO to issue one.
+              — ask your administrator to issue one.
             </p>
           </div>
           <div className="px-8 py-3 border-t flex items-center justify-between">

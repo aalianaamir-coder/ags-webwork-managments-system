@@ -73,7 +73,7 @@ function AuthGate() {
   return <AppShell user={user} onLogout={logout} onPasswordChanged={(u) => setUser(u)} />
 }
 
-/** Public reset flow: username + one-time code issued by the CEO. */
+/** Public reset flow: username + one-time code issued by the administrator. */
 function ResetPasswordView({ onBack, onDone }: { onBack: () => void; onDone: (u: SessionUser) => void }) {
   const { toast } = useToast()
   const [username, setUsername] = useState('')
@@ -110,7 +110,7 @@ function ResetPasswordView({ onBack, onDone }: { onBack: () => void; onDone: (u:
           <img src="/logo-256.png" alt="AGS" className="w-10 h-10 rounded-lg ring-1 ring-border" />
           <div>
             <h2 className="text-base font-semibold">Reset your password</h2>
-            <p className="text-xs text-muted-foreground">Use the one-time code issued by the CEO.</p>
+            <p className="text-xs text-muted-foreground">Use the one-time code issued by your administrator.</p>
           </div>
         </div>
         <div className="mt-6 space-y-4">

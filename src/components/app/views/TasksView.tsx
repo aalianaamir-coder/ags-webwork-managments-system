@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
-import { api, fmtDate, daysUntil, PRIORITIES, TASK_STATUSES } from '@/lib/client-utils'
+import { api, fmtDate, daysUntil, PRIORITIES, TASK_STATUSES, isAdminRole } from '@/lib/client-utils'
 import { useApp } from '@/lib/store'
 import { PageHeader, EmptyState, StatusBadge, EntityDialog, ConfirmDialog, CommentThread, type CommentItem } from '@/components/app/shared'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -49,7 +49,7 @@ export default function TasksView() {
   const [detail, setDetail] = useState<Task | null>(null)
 
   const isDev = user?.role === 'DEVELOPER'
-  const canWrite = user?.role === 'ADMIN' || user?.role === 'ACCOUNTANT'
+  const canWrite = isAdminRole(user?.role) || user?.role === 'ACCOUNTANT'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -223,7 +223,7 @@ export default function TasksView() {
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => completeTask(t)} aria-label="Complete"><CheckCircle2 className="w-4 h-4" /></Button>
                           )}
                           {(canWrite || t.assigneeId === user?.id) && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(t)} aria-label="Edit"><Pencil className="w-3.5 h-3.5" /></Button>}
-                          {user?.role === 'ADMIN' && <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" onClick={() => setDeleteTarget(t)} aria-label="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>}
+                          {isAdminRole(user?.role) && <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" onClick={() => setDeleteTarget(t)} aria-label="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>}
                         </div>
                       </TableCell>
                     </TableRow>

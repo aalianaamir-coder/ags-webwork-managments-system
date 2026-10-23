@@ -84,8 +84,8 @@ export const GET = handler(async (req: Request) => {
     serviceRevenue[cat] = (serviceRevenue[cat] ?? 0) + p.amount
   }
 
-  // --- Workload by team member ---
-  const team = await db.user.findMany({ where: { isActive: true }, select: { id: true, name: true, role: true, avatarUrl: true } })
+  // --- Workload by team member (hidden system accounts excluded) ---
+  const team = await db.user.findMany({ where: { isActive: true, hidden: false }, select: { id: true, name: true, role: true, avatarUrl: true } })
   const workload = await Promise.all(
     team.map(async (t) => {
       const assigned = await db.order.count({ where: { developerId: t.id, status: { in: ACTIVE_STATUSES } } })

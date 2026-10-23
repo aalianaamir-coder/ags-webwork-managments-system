@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { handler, ApiError, requirePermission } from '@/lib/permissions'
+import { handler, ApiError, requirePermission, isSuperAdmin } from '@/lib/permissions'
 import { logActivity, sanitize, riyadhToday, addDaysStr, ATTENDANCE_STATUSES } from '@/lib/helpers'
 
 // GET /api/attendance — heatmap records + today + stats (+ team overview for ADMIN/ACCOUNTANT)
@@ -7,7 +7,7 @@ import { logActivity, sanitize, riyadhToday, addDaysStr, ATTENDANCE_STATUSES } f
 export const GET = handler(async (req: Request) => {
   const user = await requirePermission('attendance:read')
   const url = new URL(req.url)
-  const canViewTeam = user.role === 'ADMIN' || user.role === 'ACCOUNTANT'
+  const canViewTeam = isSuperAdmin(user) || user.role === 'ADMIN' || user.role === 'ACCOUNTANT'
 
   let targetId = user.id
   const requestedId = sanitize(url.searchParams.get('userId'))
@@ -67,7 +67,8 @@ export const GET = handler(async (req: Request) => {
   let members: unknown[] = []
   if (canViewTeam) {
     const users = await db.user.findMany({
-      where: { isActive: true },
+      // hidden (system) accounts are never part of the attendance team view
+      where: { isActive: true, hidden: false },
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, role: true, jobTitle: true, avatarUrl: true },
     })
@@ -104,7 +105,7 @@ export const GET = handler(async (req: Request) => {
     stats,
     team,
     members,
-    canManage: user.role === 'ADMIN',
+    canManage: isSuperAdmin(user) || user.role === 'ADMIN',
     canViewTeam,
     serverDate: today,
   })

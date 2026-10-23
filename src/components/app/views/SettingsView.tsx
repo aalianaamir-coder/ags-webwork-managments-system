@@ -33,7 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/client-utils";
+import { api, isAdminRole } from "@/lib/client-utils";
 import { useApp, type SessionUser } from "@/lib/store";
 import { PageHeader } from "@/components/app/shared";
 
@@ -57,10 +57,10 @@ export default function SettingsView({
           <TabsTrigger value="profile">My profile</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="password">Security</TabsTrigger>
-          {user.role === "ADMIN" && (
+          {isAdminRole(user.role) && (
             <TabsTrigger value="business">Business</TabsTrigger>
           )}
-          {user.role === "ADMIN" && (
+          {isAdminRole(user.role) && (
             <TabsTrigger value="system">System</TabsTrigger>
           )}
         </TabsList>
@@ -73,12 +73,12 @@ export default function SettingsView({
         <TabsContent value="password">
           <PasswordTab onDone={onPasswordChanged} />
         </TabsContent>
-        {user.role === "ADMIN" && (
+        {isAdminRole(user.role) && (
           <TabsContent value="business">
             <BusinessTab />
           </TabsContent>
         )}
-        {user.role === "ADMIN" && (
+        {isAdminRole(user.role) && (
           <TabsContent value="system">
             <SystemTab />
           </TabsContent>
@@ -270,7 +270,7 @@ function ProfileTab({ user }: { user: SessionUser }) {
               Role permissions
             </p>
             <p className="text-xs mt-1">
-              {user.role === "ADMIN"
+              {isAdminRole(user.role)
                 ? "Full administrative access to every module."
                 : user.role === "DEVELOPER"
                   ? "Assigned projects, development updates, maintenance tickets."

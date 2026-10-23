@@ -74,8 +74,16 @@ if (isSandboxSqlite && !skipPg) {
 if (!env.SCHEDULER_KEY) env.SCHEDULER_KEY = 'dev-only-scheduler-key'
 
 // ---------- resolve the command (node_modules/.bin first) ----------
+// Windows: npm creates .cmd/.exe shims — spawn those (cmd.exe cannot run the
+// extensionless Unix shell scripts that also live in .bin).
 function resolveCommand(cmd) {
-  const bin = path.join(ROOT, 'node_modules', '.bin', cmd)
+  const binDir = path.join(ROOT, 'node_modules', '.bin')
+  if (process.platform === 'win32') {
+    for (const c of [`${cmd}.cmd`, `${cmd}.exe`]) {
+      if (existsSync(path.join(binDir, c))) return path.join(binDir, c)
+    }
+  }
+  const bin = path.join(binDir, cmd)
   if (existsSync(bin)) return bin
   return cmd // rely on PATH
 }

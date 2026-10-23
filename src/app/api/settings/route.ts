@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { handler, ApiError, requirePermission, requireUser } from '@/lib/permissions'
+import { handler, ApiError, requirePermission, requireUser, isAdminRole } from '@/lib/permissions'
 import { logActivity, sanitize } from '@/lib/helpers'
 
 export const GET = handler(async (req: Request) => {
@@ -7,7 +7,7 @@ export const GET = handler(async (req: Request) => {
   const settings = await db.businessSettings.findFirst()
   if (!settings) throw new ApiError(404, 'Settings not found')
   // Non-admins get a read-only view without account-management fields
-  if (user.role !== 'ADMIN') {
+  if (!isAdminRole(user)) {
     return Response.json({
       settings: {
         companyName: settings.companyName,

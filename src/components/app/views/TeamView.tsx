@@ -26,7 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { api, fmtDateTime, timeAgo } from "@/lib/client-utils";
+import { api, fmtDateTime, timeAgo, isAdminRole, displayRole } from "@/lib/client-utils";
 import { useApp, type SessionUser } from "@/lib/store";
 import { PageHeader, EntityDialog } from "@/components/app/shared";
 import { AvatarUploader } from "@/components/app/views/SettingsView";
@@ -43,6 +43,7 @@ type Member = {
   mustChangePassword: boolean;
   lastLoginAt?: string | null;
   createdAt: string;
+  hidden?: boolean;
   openOrders: number;
   openTasks: number;
   overdueTasks: number;
@@ -71,6 +72,9 @@ export default function TeamView({
     name: string;
     code: string;
   } | null>(null);
+  const [setPwdFor, setSetPwdFor] = useState<Member | null>(null);
+  const [newPwd, setNewPwd] = useState("");
+  const [newPwd2, setNewPwd2] = useState("");
   const [logs, setLogs] = useState<Log[]>([]);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -192,6 +196,55 @@ export default function TeamView({
     }
   };
 
+  const adminSetPassword = async () => {
+    if (!setPwdFor) return;
+    if (newPwd.length < 8) {
+      toast({
+        title: "Password too short",
+        description: "Use at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (newPwd !== newPwd2) {
+      toast({
+        title: "Passwords do not match",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/api/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "admin-set",
+          userId: setPwdFor.id,
+          newPassword: newPwd,
+        }),
+      });
+      toast({
+        title: `Password set for ${setPwdFor.name}`,
+        description:
+          setPwdFor.id === user?.id
+            ? "Use the new password at next sign-in."
+            : "They must use the new password at next sign-in.",
+      });
+      setSetPwdFor(null);
+      setNewPwd("");
+      setNewPwd2("");
+      load();
+    } catch (err) {
+      toast({
+        title: "Could not set password",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading)
     return (
       <div className="flex justify-center py-20">
@@ -239,15 +292,23 @@ export default function TeamView({
                         Disabled
                       </Badge>
                     )}
+                    {m.hidden && (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] border-dashed text-muted-foreground"
+                      >
+                        Hidden
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
                     {m.jobTitle}
                   </p>
                   <Badge
-                    variant={m.role === "ADMIN" ? "default" : "secondary"}
+                    variant={m.role === "ADMIN" || m.role === "SUPERADMIN" ? "default" : "secondary"}
                     className="mt-1.5 text-[10px]"
                   >
-                    {m.role}
+                    {displayRole(m.role)}
                   </Badge>
                 </div>
               </div>
@@ -307,6 +368,38 @@ export default function TeamView({
                     <KeyRound className="w-3.5 h-3.5 mr-1.5" />
                     Reset pwd
                   </Button>
+                  {user?.role === "SUPERADMIN" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setSetPwdFor(m);
+                        setNewPwd("");
+                        setNewPwd2("");
+                      }}
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                      Set pwd
+                    </Button>
+                  )}
+                </div>
+              )}
+              {user?.role === "SUPERADMIN" && m.id === user.id && (
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setSetPwdFor(m);
+                      setNewPwd("");
+                      setNewPwd2("");
+                    }}
+                  >
+                    <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                    Set my password
+                  </Button>
                 </div>
               )}
             </CardContent>
@@ -364,28 +457,36 @@ export default function TeamView({
       >
         {editMember && (
           <div className="space-y-4">
-            <div className="space-y-1">
-              <Label className="text-xs">Role</Label>
-              <Select
-                defaultValue={editMember.role}
-                onValueChange={(v) => updateMember(editMember, { role: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ADMIN">
-                    ADMIN — CEO (full access)
-                  </SelectItem>
-                  <SelectItem value="DEVELOPER">
-                    DEVELOPER — assigned projects only
-                  </SelectItem>
-                  <SelectItem value="ACCOUNTANT">
-                    ACCOUNTANT — financial &amp; order records
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {!editMember.hidden && (
+              <div className="space-y-1">
+                <Label className="text-xs">Role</Label>
+                <Select
+                  defaultValue={editMember.role}
+                  onValueChange={(v) => updateMember(editMember, { role: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ADMIN">
+                      ADMIN — CEO (full access)
+                    </SelectItem>
+                    <SelectItem value="DEVELOPER">
+                      DEVELOPER — assigned projects only
+                    </SelectItem>
+                    <SelectItem value="ACCOUNTANT">
+                      ACCOUNTANT — financial &amp; order records
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {editMember.hidden && (
+              <p className="text-[11px] text-muted-foreground border border-dashed rounded-md p-2">
+                This is a system account — its role is fixed and it stays
+                hidden from all other users.
+              </p>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">Job title</Label>
               <Input
@@ -599,6 +700,62 @@ export default function TeamView({
               The member uses it from the login screen → &ldquo;Forgot
               password?&rdquo; flow.
             </p>
+          </div>
+        )}
+      </EntityDialog>
+
+      {/* Direct password set (system administrator only) */}
+      <EntityDialog
+        open={!!setPwdFor}
+        onOpenChange={(v) => {
+          if (!v) {
+            setSetPwdFor(null);
+            setNewPwd("");
+            setNewPwd2("");
+          }
+        }}
+        title={`Set a new password — ${setPwdFor?.name ?? ""}`}
+      >
+        {setPwdFor && (
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              {setPwdFor.id === user?.id
+                ? "Choose a new password for your own account. You stay signed in on this device."
+                : `This immediately replaces ${setPwdFor.name}'s password and signs them out everywhere. They will use the new password at next sign-in.`}
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs">New password (min 8 characters)</Label>
+              <Input
+                type="password"
+                value={newPwd}
+                onChange={(e) => setNewPwd(e.target.value)}
+                placeholder="••••••••"
+                minLength={8}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Confirm new password</Label>
+              <Input
+                type="password"
+                value={newPwd2}
+                onChange={(e) => setNewPwd2(e.target.value)}
+                placeholder="••••••••"
+                minLength={8}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setSetPwdFor(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={adminSetPassword}
+                disabled={busy || newPwd.length < 8 || newPwd !== newPwd2}
+              >
+                {busy && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+                Set password
+              </Button>
+            </div>
           </div>
         )}
       </EntityDialog>

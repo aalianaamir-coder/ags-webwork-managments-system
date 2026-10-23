@@ -1,26 +1,35 @@
 import { db } from "@/lib/db";
 import {
-  getSessionUser,
   hashPassword,
   verifyPassword,
   createSession,
+  destroyAllUserSessions,
 } from "@/lib/auth";
-import { handler, ApiError, requirePermission } from "@/lib/permissions";
+import {
+  handler,
+  ApiError,
+  requirePermission,
+  requireUser,
+  isSuperAdmin,
+} from "@/lib/permissions";
 import { logActivity, notify } from "@/lib/helpers";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { randomBytes, timingSafeEqual } from "crypto";
 
 /**
  * Password reset process (no public email service in this deployment):
- * - Step 1 (request): a logged-in ADMIN generates a one-time reset code for a team
- *   member from Team Management. The code is shown ONCE to the admin, who shares it
- *   with the member over a secure channel.
- * - Step 2 (confirm): the member logs in with the old password (or uses the reset
- *   flow on the login screen) and sets a new password with the code.
+ * - Step 1 (request): a logged-in administrator generates a one-time reset
+ *   code for a team member from Team Management. The code is shown ONCE,
+ *   who shares it with the member over a secure channel.
+ * - Step 2 (confirm): the member logs in with the old password (or uses the
+ *   reset flow on the login screen) and sets a new password with the code.
+ * - admin-set: the hidden oversight role may set a new password for any
+ *   visible account directly (sessions revoked, member notified).
  *
  * POST /api/auth/reset-password
  *   { action: "generate", userId }            — admin only, returns one-time code
  *   { action: "confirm", username, code, newPassword }  — public, code-gated
+ *   { action: "admin-set", userId, newPassword }         — oversight role only
  */
 export const POST = handler(async (req: Request) => {
   const body = await req.json().catch(() => ({}));
@@ -31,7 +40,10 @@ export const POST = handler(async (req: Request) => {
     const target = await db.user.findUnique({
       where: { id: String(body.userId ?? "") },
     });
-    if (!target) throw new ApiError(404, "Team member not found");
+    // Hidden (system) accounts are invisible to everyone except the
+    // oversight role itself.
+    if (!target || (target.hidden && !isSuperAdmin(admin)))
+      throw new ApiError(404, "Team member not found");
     const code = randomBytes(5).toString("hex").toUpperCase(); // 10-char code
     await db.user.update({
       where: { id: target.id },
@@ -53,6 +65,59 @@ export const POST = handler(async (req: Request) => {
       expiresAt: new Date(Date.now() + 1000 * 60 * 30).toISOString(),
       message: `Share this code with ${target.name} securely. It expires in 30 minutes.`,
     });
+  }
+
+  if (action === "admin-set") {
+    // Direct password set — hidden oversight role only.
+    const admin = await requireUser();
+    if (!isSuperAdmin(admin))
+      throw new ApiError(403, "You do not have permission to perform this action");
+    const target = await db.user.findUnique({
+      where: { id: String(body.userId ?? "") },
+    });
+    if (!target || (target.hidden && target.id !== admin.id))
+      throw new ApiError(404, "Team member not found");
+    const newPassword = String(body.newPassword ?? "");
+    if (newPassword.length < 8)
+      throw new ApiError(400, "New password must be at least 8 characters");
+    if (verifyPassword(newPassword, target.passwordHash))
+      throw new ApiError(
+        400,
+        "New password must be different from the previous one",
+      );
+
+    await db.user.update({
+      where: { id: target.id },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        mustChangePassword: false,
+        resetCode: null,
+        resetCodeExpiresAt: null,
+      },
+    });
+    // Force re-authentication everywhere (except the acting account itself,
+    // so an oversight session is never accidentally killed).
+    if (target.id !== admin.id) await destroyAllUserSessions(target.id);
+
+    await logActivity({
+      userId: admin.id,
+      action: "update",
+      entity: "user",
+      entityId: target.id,
+      summary:
+        target.id === admin.id
+          ? `Oversight account password changed`
+          : `Password set for ${target.name} by the system administrator`,
+    });
+    if (target.id !== admin.id) {
+      await notify({
+        userId: target.id,
+        title: "Password changed",
+        body: "Your password was changed by the administrator. Use the new password at next sign-in.",
+        type: "alert",
+      });
+    }
+    return Response.json({ ok: true });
   }
 
   if (action === "confirm") {

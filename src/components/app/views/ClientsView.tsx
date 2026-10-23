@@ -43,7 +43,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { api, fmtSAR, fmtDate, CLIENT_STATUSES } from "@/lib/client-utils";
+import { api, fmtSAR, fmtDate, CLIENT_STATUSES, isAdminRole } from "@/lib/client-utils";
 import { useApp } from "@/lib/store";
 import {
   PageHeader,
@@ -138,8 +138,8 @@ export default function ClientsView() {
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
   const [detail, setDetail] = useState<Client | null>(null);
 
-  const canWrite = user?.role === "ADMIN" || user?.role === "ACCOUNTANT";
-  const canDelete = user?.role === "ADMIN";
+  const canWrite = isAdminRole(user?.role) || user?.role === "ACCOUNTANT";
+  const canDelete = isAdminRole(user?.role);
 
   const load = useCallback(async () => {
     setLoading(true);

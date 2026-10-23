@@ -26,7 +26,7 @@ export type SessionUser = {
   username: string
   email: string
   name: string
-  role: 'ADMIN' | 'DEVELOPER' | 'ACCOUNTANT'
+  role: 'SUPERADMIN' | 'ADMIN' | 'DEVELOPER' | 'ACCOUNTANT'
   jobTitle: string
   avatarUrl?: string | null
   mustChangePassword: boolean
@@ -79,7 +79,7 @@ globalForStore.__agsAppStore = useApp
 export type NavGroup = { label: string; items: { id: ViewId; labelKey: string; icon: string }[] }
 
 export function navGroupsForRole(role: string | undefined): NavGroup[] {
-  const isAdmin = role === 'ADMIN'
+  const isAdmin = role === 'ADMIN' || role === 'SUPERADMIN'
   const isAccountant = role === 'ACCOUNTANT'
 
   const groups: NavGroup[] = [

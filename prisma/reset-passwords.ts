@@ -1,5 +1,9 @@
 // AGS WEBWORKS — reset the three team account passwords.
-// Generates temporary random credentials and requires a change at next sign-in.
+// Usage: bunx tsx prisma/reset-passwords.ts
+// Resets each account to its initial password (username = password, per owner
+// policy v2.1) and signs out all sessions. Leaves all other data untouched.
+// For STRONG random passwords instead (recommended for client handover),
+// run with: --strong
 
 import { PrismaClient } from '@prisma/client'
 import { randomBytes, scryptSync, randomInt } from 'crypto'
@@ -34,12 +38,16 @@ async function main() {
     { username: 'addan', name: 'Addan' },
   ]
 
+  const strong = process.argv.includes('--strong')
+
   const lines: string[] = [
     '==============================================================',
     ' AGS WEBWORKS — Initial Login Credentials (PRIVATE)',
     ' Generated ' + new Date().toISOString(),
-    ' Random temporary passwords generated — change at first sign-in.',
-    ' Regenerate with: bunx tsx prisma/reset-passwords.ts',
+    strong
+      ? ' Strong random passwords generated — change at first login.'
+      : ' Sign-in: username = password (e.g. sharjeel / sharjeel).',
+    ' Regenerate with: bunx tsx prisma/reset-passwords.ts [--strong]',
     '==============================================================',
     '',
   ]
@@ -50,19 +58,19 @@ async function main() {
       console.error(`✗ Account "${acc.username}" not found — run the seed first`)
       continue
     }
-    const password = generateStrongPassword(acc.name)
+    const password = strong ? generateStrongPassword(acc.name) : acc.username
     await db.user.update({
       where: { id: user.id },
       data: {
         passwordHash: hashPassword(password),
-        mustChangePassword: true,
+        mustChangePassword: strong,
         resetCode: null,
         resetCodeExpiresAt: null,
         isActive: true,
       },
     })
     await db.session.deleteMany({ where: { userId: user.id } })
-    console.log(`✓ ${acc.name}: random temporary password set; change it at first sign-in`)
+    console.log(`✓ ${acc.name}: password reset${strong ? ' (strong, change at first login)' : ' (username = password)'}`)
     lines.push(`${acc.name.padEnd(10)} username: ${acc.username}`)
     lines.push(`${''.padEnd(10)} password: ${password}`)
     lines.push(`${''.padEnd(10)} role: ${user.role} — ${user.jobTitle}`)

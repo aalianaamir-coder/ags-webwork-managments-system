@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { api, fmtSAR, fmtDate, PAYMENT_METHODS, INVOICE_STATUSES, SERVICE_TYPES } from '@/lib/client-utils'
+import { api, fmtSAR, fmtDate, PAYMENT_METHODS, INVOICE_STATUSES, SERVICE_TYPES, isAdminRole } from '@/lib/client-utils'
 import { useApp } from '@/lib/store'
 import { PageHeader, EmptyState, StatusBadge, EntityDialog, ConfirmDialog, StatCard } from '@/components/app/shared'
 import { InvoiceDocument, InvoiceActions, type InvoiceDoc } from '@/components/app/InvoiceDocument'
@@ -116,7 +116,7 @@ function PaymentsTab({ dataVersion, bumpData }: { dataVersion: number; bumpData:
     } finally { setBusy(false) }
   }
 
-  const canDelete = user?.role === 'ADMIN'
+  const canDelete = isAdminRole(user?.role)
 
   return (
     <div className="space-y-4">

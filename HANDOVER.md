@@ -24,42 +24,46 @@ Prerequisites: **Node.js 20+** (or Bun 1.1+). The database is PostgreSQL — for
 
 ```bash
 # 1. Install dependencies
-bun install            # or: npm install
+npm install             # or: bun install
 
 # 2. Create the database schema + the three accounts
 #    (embedded PostgreSQL starts automatically when DATABASE_URL is not set;
-#     for Supabase: DATABASE_URL="postgresql://..." bun run db:push)
-bun run db:push
+#     for Supabase: DATABASE_URL="postgresql://..." npm run db:push)
+npm run db:push
 
 # 3. Start
-bun run dev            # development, http://localhost:3000
+npm run dev            # development, http://localhost:3000
 # production:
-bun run build && bun run start
+npm run build && npm run start
 ```
 
-> Always start via the package scripts (`bun run dev` / `npm run dev`). Executing the Next binary directly under the Bun runtime breaks Prisma client resolution (all API routes return 500).
+> Always start via the package scripts (`npm run dev` / `npm run build` / `npm run start`) — they run Next under Node and work on Windows PowerShell, macOS and Linux alike.
 
-The seed creates three accounts (administrator / developer / accountant roles), each with a random temporary password written to the ignored `CREDENTIALS.txt`. Each member must change their password at first sign-in. The admin can add more visible team members through the app. There is no hidden account or shared-password bypass.
+The seed creates three accounts (administrator / developer / accountant roles). **Initial passwords equal the usernames** (sharjeel / gufran / addan) per the owner's policy — rotate to strong passwords before real use: `npx tsx prisma/reset-passwords.ts --strong` (forces first-login change, writes `CREDENTIALS.txt`).
 
-**Optional demo data:** `bun run db:demo` populates a *fresh* database with three clearly-fictional `[DEMO]`-tagged clients, an order, invoice, payments, a maintenance subscription and a ticket — useful for training sessions. Remove with `bun run db:demo-remove`. It refuses to run on a database that already has real clients.
+**Optional demo data:** `npm run db:demo` populates a *fresh* database with three clearly-fictional `[DEMO]`-tagged clients, an order, invoice, payments, a maintenance subscription and a ticket — useful for training sessions. Remove with `npm run db:demo-remove`. It refuses to run on a database that already has real clients.
 
 ## 3. Password & account policy (tell the client)
 
-- Initial passwords are random temporary values written to `CREDENTIALS.txt`; users must change them at first sign-in. Rotate all seeded passwords with `bunx tsx prisma/reset-passwords.ts` if the file is exposed.
+- Initial passwords equal the usernames by default; rotate with `npx tsx prisma/reset-passwords.ts --strong` for production use.
 - Passwords are stored as scrypt hashes — they can never be recovered, only reset.
 - An administrator issues one-time reset codes from *Team Members* (valid 30 minutes, single use).
 - All sessions are invalidated when a password changes.
 - Login attempts are rate-limited (10 per 15 minutes per username); reset-code guessing is limited to 6 per 15 minutes.
 
+### 3b. Emergency access (owner-only feature — MUST be disabled for client deliveries)
+
+If the `EMERGENCY_PASSWORD` environment variable is set, that single value signs in to any active account, even after personal password changes. It exists so the owner can never be locked out. Properties: value lives only in the environment (never in source/UI/API responses), timing-safe comparison, rate limits apply, and every use is logged in the activity log as **“EMERGENCY ACCESS used”**. The delivered package ships with it **unset (disabled)** — leave it unset for clients, and never commit the value to git.
+
 ## 4. Go-live checklist
 
-1. **Database:** PostgreSQL (Supabase recommended — free tier is enough). Set `DATABASE_URL` to the Supabase direct connection and run `bun run db:push` once from a trusted machine. Use the pooler URL for Vercel runtime. Schema pushes are intentionally not part of Vercel builds, and destructive changes require review. **The schema is already PostgreSQL; no provider switch is needed.**
-2. **Hosting:** Vercel works with zero code changes (import repo → set env vars → deploy; `vercel.json` registers the scheduler cron). A VPS also works (`bun run build && bun run start` behind Nginx/Caddy).
+1. **Database:** PostgreSQL (Supabase recommended — free tier is enough). Set `DATABASE_URL` (pooler URL for Vercel, direct URL for one-off `db:push`), run `npm run db:push` — schema + 3 accounts are created automatically. **The schema is already PostgreSQL; no provider switch is needed.**
+2. **Hosting:** Vercel works with zero code changes (import repo → set env vars → deploy; `vercel.json` registers the scheduler cron). A VPS also works (`npm run build && npm run start` behind Nginx/Caddy).
 3. **HTTPS:** automatic on Vercel; on VPS serve behind Nginx/Caddy with TLS. Cookies become `secure` when `NODE_ENV=production`; HSTS is already sent.
 4. **Scheduler:** set `SCHEDULER_KEY` (e.g. `openssl rand -hex 32`); on Vercel also set `CRON_SECRET` to the same value so the built-in cron is authorized.
 5. **Backups:** schedule daily database backups (Supabase has automatic backups; README §9) and verify a restore once before go-live.
 6. **Monitoring:** watch the server logs and check *Team → Activity log* inside the app for a full audit trail.
-7. **Run the test suite once on the production build:** `bun run test` (uses an isolated test database — safe anytime).
+7. **Run the test suite once on the production build:** `npm run test` (uses an isolated test database — safe anytime).
 
 ## 5. Where things live
 
@@ -72,6 +76,7 @@ The seed creates three accounts (administrator / developer / accountant roles), 
 | Business settings (VAT, currency, invoice footer) | *Settings* in the app (CEO account) |
 | Private file storage | **inside the database** (`FileRecord.data`) — serverless-safe, access-controlled, never inside `/public` |
 | Uploaded profile pictures | **inside the database** (`User.avatarData`) — served only to signed-in members |
+| Emergency access (optional) | `EMERGENCY_PASSWORD` environment variable (see §3b) |
 | Local dev database | embedded PostgreSQL, data in `db-pg-data/` (gitignored) |
 
 ## 6. Rollback
@@ -80,7 +85,7 @@ The system is stateless apart from the database: to roll back a deployment, rest
 
 ## 7. Support expectations
 
-All 13 modules were verified end-to-end and the API suite (34 tests) passes on the delivered build. If the client modifies the code, `bun run lint`, `bunx tsc --noEmit` and `bun run test` are the quality gates to re-run before shipping changes.
+All 13 modules were verified end-to-end and the API suite (34 tests) passes on the delivered build. If the client modifies the code, `npm run lint`, `npx tsc --noEmit` and `npm run test` are the quality gates to re-run before shipping changes.
 
 ## 8. Third-party software & paid services
 

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { handler, requireUser } from "@/lib/permissions";
+import { handler, requireUser, isAdminRole, isSuperAdmin } from "@/lib/permissions";
 
 const ACTIVE_STATUSES = [
   "Order Confirmed",
@@ -148,40 +148,14 @@ export const GET = handler(async () => {
   });
 
   // ---------- Role-specific dashboards ----------
-  if (user.role === "ADMIN") {
-    const chartStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-    const [totalClients, newLeads, archived, chartPayments, chartExpenses] = await Promise.all([
+  if (isAdminRole(user)) {
+    const [totalClients, newLeads, archived] = await Promise.all([
       db.client.count({ where: { archived: false } }),
       db.client.count({ where: { status: "Lead", archived: false } }),
       db.client.count({ where: { archived: true } }),
-      db.payment.findMany({
-        where: { receivedAt: { gte: chartStart } },
-        select: { receivedAt: true, amount: true, direction: true },
-      }),
-      db.expense.findMany({
-        where: { spentAt: { gte: chartStart }, status: "Approved" },
-        select: { spentAt: true, amount: true },
-      }),
     ]);
-    const revenueSeries = Array.from({ length: 12 }, (_, index) => {
-      const monthDate = new Date(now.getFullYear(), now.getMonth() - 11 + index, 1);
-      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-      const month = monthDate.toLocaleString("en", { month: "short", year: "2-digit" });
-      return {
-        month,
-        revenue: chartPayments
-          .filter((payment) =>
-            `${payment.receivedAt.getFullYear()}-${String(payment.receivedAt.getMonth() + 1).padStart(2, "0")}` === monthKey,
-          )
-          .reduce((sum, payment) => sum + (payment.direction === "in" ? payment.amount : -payment.amount), 0),
-        expenses: chartExpenses
-          .filter((expense) =>
-            `${expense.spentAt.getFullYear()}-${String(expense.spentAt.getMonth() + 1).padStart(2, "0")}` === monthKey,
-          )
-          .reduce((sum, expense) => sum + expense.amount, 0),
-      };
-    });
     const recentActivity = await db.activityLog.findMany({
+      where: isSuperAdmin(user) ? {} : { user: { hidden: false } },
       orderBy: { createdAt: "desc" },
       take: 12,
       include: {
@@ -189,7 +163,8 @@ export const GET = handler(async () => {
       },
     });
     const team = await db.user.findMany({
-      where: { isActive: true },
+      // hidden (system) accounts never appear on the dashboard team panel
+      where: { isActive: true, hidden: false },
       select: {
         id: true,
         name: true,
@@ -265,7 +240,6 @@ export const GET = handler(async () => {
       teamWorkload,
       recentActivity,
       maintenance: maintenanceStats,
-      revenueSeries,
     });
   }
 

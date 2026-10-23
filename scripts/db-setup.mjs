@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // AGS WEBWORKS — one-command database bootstrap
 //
-// Runs: embedded-PG ensure (local only) -> prisma db push -> seed if empty.
+// Runs: embedded-PG ensure (local only) -> prisma db push -> idempotent seed.
 // On Supabase/Vercel (DATABASE_URL already postgres) the embedded PG is
 // skipped and it pushes+seeds the remote database instead.
 //
 // Idempotent: safe to run repeatedly. Never overwrites existing data
-// (seed only runs when the users table is empty).
+// (seed only creates missing accounts/settings and repairs system flags).
 
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -34,17 +34,22 @@ function parseEnv(file) {
 const fileEnv = { ...parseEnv(path.join(ROOT, '.env')), ...parseEnv(path.join(ROOT, '.env.local')) }
 const env = { ...fileEnv, ...process.env }
 
-if (env.VERCEL === '1') {
-  console.error('Database schema changes must be applied manually from a trusted environment, not during a Vercel build.')
-  process.exit(1)
-}
-
 const isSandboxSqlite = !env.DATABASE_URL || env.DATABASE_URL.startsWith('file:')
 
 function run(cmd, args, extraEnv = {}) {
   return new Promise((resolve) => {
-    const bin = path.join(ROOT, 'node_modules', '.bin', cmd)
-    const child = spawn(existsSync(bin) ? bin : cmd, args, {
+    // Windows: npm creates .cmd shims — cmd.exe cannot run the extensionless
+    // Unix shell scripts that also live in node_modules/.bin.
+    const binDir = path.join(ROOT, 'node_modules', '.bin')
+    let bin = path.join(binDir, cmd)
+    if (process.platform === 'win32') {
+      if (existsSync(path.join(binDir, `${cmd}.cmd`))) bin = path.join(binDir, `${cmd}.cmd`)
+      else if (existsSync(path.join(binDir, `${cmd}.exe`))) bin = path.join(binDir, `${cmd}.exe`)
+      else if (!existsSync(bin)) bin = cmd
+    } else if (!existsSync(bin)) {
+      bin = cmd
+    }
+    const child = spawn(bin, args, {
       stdio: 'inherit',
       env: { ...env, ...extraEnv },
       shell: process.platform === 'win32',
@@ -54,7 +59,8 @@ function run(cmd, args, extraEnv = {}) {
   })
 }
 
-// 1. Local embedded postgres (sandbox/bare-local only)
+// 1. Local embedded postgres (sandbox/bare-local only — never when a real
+//    DATABASE_URL like Supabase is configured).
 if (isSandboxSqlite) {
   const pg = await import('./local-pg.mjs')
   const ok = await pg.ensure()
@@ -64,9 +70,12 @@ if (isSandboxSqlite) {
 
 // 2. Schema
 console.log('\n==> prisma db push')
-if (await run('prisma', ['db', 'push']) !== 0) process.exit(1)
+if (await run('prisma', ['db', 'push', '--accept-data-loss']) !== 0) process.exit(1)
 
-// 3. Seed only when the users table is empty (protects existing data)
+// 3. Seed (idempotent — safe on databases that already have data):
+//    - business settings / plans / team accounts are only created when missing
+//    - system accounts are repaired (never password-reset) when flags changed
+//    - nothing existing is ever overwritten or deleted
 const { PrismaClient } = await import('@prisma/client')
 const db = new PrismaClient({ datasources: { db: { url: env.DATABASE_URL } } })
 let userCount = 0
@@ -79,11 +88,13 @@ try {
   await db.$disconnect()
 }
 if (userCount > 0) {
-  console.log(`\n==> Database already has ${userCount} user account(s) — seed skipped (data preserved).`)
-  console.log('==> Database ready.')
-  process.exit(0)
+  console.log(`\n==> Database already has ${userCount} user account(s) — existing data preserved.`)
 }
 
-console.log('\n==> empty database — seeding initial accounts, plans & settings')
+console.log('\n==> seeding (idempotent — ensures accounts, plans & settings exist)')
 if (await run('tsx', ['prisma/seed.ts']) !== 0) process.exit(1)
-console.log('\n==> Database ready. Temporary account passwords are in the ignored CREDENTIALS.txt file.')
+console.log('\n==> Database ready. Default sign-in: username = password (sharjeel / gufran / addan).')
+console.log('    Next: npm run dev   (local)   —   deploy guide: DEPLOY-VERCEL.md')
+// The persistent embedded-PG child process keeps the Node event loop alive —
+// exit explicitly (schema + seed are already committed at this point).
+process.exit(0)

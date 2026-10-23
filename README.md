@@ -4,6 +4,10 @@ A complete, secure, production-ready internal management system for **AGS WEBWOR
 
 **Made by Aaliyan Aamir**
 
+> 🚀 **Deploying to Vercel?** Read **[DEPLOY-VERCEL.md](./DEPLOY-VERCEL.md)** first — it is a complete,
+> copy-paste-ready guide (Supabase database + GitHub + Vercel, written for Windows PowerShell).
+> `npm` works everywhere; `bun` is optional.
+
 ---
 
 ## 1. What's Inside
@@ -25,13 +29,17 @@ A complete, secure, production-ready internal management system for **AGS WEBWOR
 
 ## 2. The Three Accounts
 
-Accounts are created by the seed script (`prisma/seed.ts`) — **never hardcoded in the frontend**. Each new account receives a random temporary password saved to the ignored `CREDENTIALS.txt` file and must change it at first sign-in. Use the in-app admin team controls to add or manage accounts; there is no hidden account or shared password.
+Accounts are created by the seed script (`prisma/seed.ts`) — **never hardcoded in the frontend**. Per the owner's policy (v2.1), each account's **initial password equals its username** (e.g. `sharjeel` / `sharjeel`) so the team can sign in immediately; passwords are documented in `CREDENTIALS.txt` (chmod 600). For client handover, rotate to strong passwords: `npx tsx prisma/reset-passwords.ts --strong` (forces first-login change).
 
 | Member | Username | Role | Access |
 |---|---|---|---|
 | Sharjeel | `sharjeel` | ADMIN — CEO & Marketing | Everything: all modules, settings, team management, expense approvals, package pricing |
 | Gufran | `gufran` | DEVELOPER — Web Developer | Assigned orders/projects only, dev-stage status updates, website links, tasks, assigned maintenance tickets, files. **No financial data, no settings, no user management** |
 | Addan | `addan` | ACCOUNTANT — Order Coordinator | Orders & coordination, payments, invoices, expenses (create), maintenance billing & invoices, reports. **No user management, no admin settings** |
+
+### 2b. Emergency access (owner-controlled, optional)
+
+If the `EMERGENCY_PASSWORD` environment variable is set, that single password signs in to **any active account** — even after personal password changes — so the owner can never be locked out. The value lives only in the environment (never in source code, never in the UI, never returned by any API), comparison is timing-safe, normal rate limits still apply, and every use is recorded in the activity log as **“EMERGENCY ACCESS used”**. Disable it (leave unset) before handing the system to a client — the clean delivery package ships with it disabled.
 
 ## 3. Tech Stack & What To Connect
 
@@ -44,7 +52,7 @@ Accounts are created by the seed script (`prisma/seed.ts`) — **never hardcoded
 
 **Database connection:** the app talks to the database through Prisma using the `DATABASE_URL` environment variable.
 
-- **Local dev:** zero configuration — if `DATABASE_URL` is missing (or points at a legacy sqlite file), an **embedded PostgreSQL** starts automatically on `127.0.0.1:5433` (data in `db-pg-data/`, gitignored). `bun run dev` / `bun run db:push` handle everything.
+- **Local dev:** zero configuration — if `DATABASE_URL` is missing (or points at a legacy sqlite file), an **embedded PostgreSQL** starts automatically on `127.0.0.1:5433` (data in `db-pg-data/`, gitignored). `npm run dev` / `npm run db:push` handle everything.
 - **Production:** PostgreSQL or Supabase — set `DATABASE_URL` (see §6 and §7). On Vercel, add it in the project settings; no code changes needed.
 
 No other external services are required. Uploaded files and profile pictures are stored **inside the database** (private, access-controlled, and serverless-safe — they survive Vercel redeploys where the filesystem is read-only). Business files are limited to 4 MB and avatars to 2 MB.
@@ -65,6 +73,7 @@ Production example (PostgreSQL / Supabase — see §6 for the exact Supabase URL
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/postgres?pgbouncer=true&connection_limit=1"
 NODE_ENV=production
 SCHEDULER_KEY="<long-random-string>"   # also set as CRON_SECRET on Vercel
+EMERGENCY_PASSWORD="<owner-only>"     # optional — see §2b; DISABLE for client handover
 ```
 
 | Variable | Required | Purpose |
@@ -72,35 +81,36 @@ SCHEDULER_KEY="<long-random-string>"   # also set as CRON_SECRET on Vercel
 | `DATABASE_URL` | yes | PostgreSQL connection string (Supabase pooler URL on Vercel). When missing locally, the embedded dev PostgreSQL is used automatically |
 | `NODE_ENV` | prod | Set to `production` → secure cookies over HTTPS |
 | `SCHEDULER_KEY` | recommended | Secret for the recurring-invoice cron endpoint. Accepts `x-scheduler-key` header or `Authorization: Bearer` (Vercel Cron). Generate with `openssl rand -hex 32`. Also set as `CRON_SECRET` in Vercel |
+| `EMERGENCY_PASSWORD` | optional | Owner break-glass password — signs in to any active account; audited in the activity log. See §2b |
 
 Never expose `DATABASE_URL`, `SCHEDULER_KEY` or any secrets to the client — all sensitive operations run in server-side API routes.
 
 ## 5. Run Locally
 
 ```bash
-bun install          # or npm install
-bun run db:push      # start embedded PostgreSQL (if needed) + create schema + seed the 3 accounts
-bun run dev          # http://localhost:3000
+npm install           # or bun install
+npm run db:push       # start embedded PostgreSQL (if needed) + create schema + seed accounts
+npm run dev           # http://localhost:3000
 ```
 
-> `db:push` starts local embedded PostgreSQL when needed, safely pushes the Prisma schema, and seeds accounts + plans + settings only when the database has no users. Existing account data is preserved. It does not accept data loss and refuses to run inside a Vercel build. On first setup, use the temporary passwords in the ignored `CREDENTIALS.txt` file.
+> `db:push` is a full self-healing setup: it starts the local embedded PostgreSQL when needed, pushes the schema, and runs an **idempotent seed** (creates missing accounts / plans / settings; existing data is never overwritten or deleted). Sign in with username = password (sharjeel / gufran / addan) or your emergency password if set.
 
-> Always start the dev server through the package script (`bun run dev` / `npm run dev`). Do **not** execute the Next binary directly with Bun (e.g. `bun next dev` or `bun node_modules/next/dist/bin/next dev`) — Bun-as-runtime + Turbopack cannot resolve the generated Prisma client and every API route will 500. The package scripts run Next under Node, which is fully supported.
+> Always start the dev server through the package script (`npm run dev`). The scripts run Next under Node — fully supported on Windows (PowerShell), macOS and Linux. See **DEPLOY-VERCEL.md** for the complete GitHub → Supabase → Vercel walkthrough.
 
 Useful scripts:
 
 ```bash
-bun run lint                          # ESLint
-bun run test                          # production build + 34 automated API tests (isolated DB)
-bun run db:push                       # push schema changes
-bun run db:seed                       # idempotent seed (existing accounts are kept)
-bun run db:demo                       # OPTIONAL: insert clearly-fake demo data (fresh DB only)
-bun run db:demo-remove                # remove demo data
-bunx tsx prisma/reset-passwords.ts    # regenerate all 3 passwords (writes CREDENTIALS.txt)
-bunx tsx prisma/cleanup.ts            # wipe business data + restore seeded credentials
+npm run lint                          # ESLint
+npm run test                          # production build + 34 automated API tests (isolated DB)
+npm run db:push                       # push schema changes
+npm run db:seed                       # idempotent seed (existing accounts are kept)
+npm run db:demo                       # OPTIONAL: insert clearly-fake demo data (fresh DB only)
+npm run db:demo-remove                # remove demo data
+npx tsx prisma/reset-passwords.ts     # regenerate all 3 passwords (writes CREDENTIALS.txt)
+npx tsx prisma/cleanup.ts             # wipe business data + restore seeded credentials
 ```
 
-> **Safe seeding of a test database:** `CREDENTIALS_FILE=tests/creds.txt DATABASE_URL="postgresql://127.0.0.1:5433/ags_test" bunx tsx prisma/seed.ts` — the credentials file path is overridable so testing never overwrites the real one.
+> **Safe seeding of a test database:** `CREDENTIALS_FILE=tests/creds.txt DATABASE_URL="postgresql://127.0.0.1:5433/ags_test" npx tsx prisma/seed.ts` — the credentials file path is overridable so testing never overwrites the real one.
 
 ## 6. Supabase (PostgreSQL) Setup
 
@@ -110,9 +120,9 @@ The schema is already PostgreSQL — no code changes are needed, only a connecti
 2. In **Project Settings → Database → Connection string** you will find two URLs:
    - **Transaction pooler** (port `6543`, has `?pgbouncer=true&connection_limit=1`) — use this as the runtime `DATABASE_URL` (Vercel, serverless-safe).
    - **Direct connection** (port `5432`) — use this for one-off commands from your machine (`db:push`, `db:seed`).
-3. Initialize and seed once from a trusted machine using the Supabase **direct** connection (creates tables + the 3 accounts + plans + settings; schema changes are intentionally not run during Vercel builds):
+3. Initialize and seed from your machine (creates all tables + the accounts + plans + settings):
    ```bash
-   DATABASE_URL="postgresql://postgres.REF:PASSWORD@db.REF.supabase.co:5432/postgres" bun run db:push
+   DATABASE_URL="postgresql://postgres.REF:PASSWORD@db.REF.supabase.co:5432/postgres" npm run db:push
    ```
 4. That's it — the same app now runs anywhere with the pooler URL.
 
@@ -126,8 +136,9 @@ The schema is already PostgreSQL — no code changes are needed, only a connecti
    - `DATABASE_URL` = the Supabase **Transaction pooler** URL (port 6543)
    - `SCHEDULER_KEY` = a long random string (`openssl rand -hex 32`)
    - `CRON_SECRET` = the **same value** as `SCHEDULER_KEY` (authorizes the built-in Vercel Cron)
+   - `EMERGENCY_PASSWORD` = your owner break-glass password (optional, see §2b)
 4. Deploy. `vercel.json` already registers a daily cron for the maintenance scheduler (see below).
-5. Sign in at `https://<your-project>.vercel.app` with the temporary credentials generated during database setup; change each password at first sign-in.
+5. Sign in at `https://<your-project>.vercel.app` — username = password, or the emergency password.
 
 Notes for Vercel:
 - The build script runs `prisma generate` automatically — no manual steps.
@@ -139,10 +150,10 @@ Notes for Vercel:
 
 ```bash
 git clone <your-repo> && cd ags-management
-bun install
-# configure .env with PostgreSQL + NODE_ENV=production
-bun run db:push                  # creates schema (seeds if empty)
-bun run build && bun run start   # serves on port 3000 behind Nginx/Caddy
+npm install
+# configure .env with PostgreSQL
+npm run db:push                  # creates schema (seeds if empty)
+npm run build && npm run start   # serves on port 3000 behind Nginx/Caddy
 ```
 
 **The recurring invoice scheduler — how to activate true 24/7 automation:**
@@ -177,7 +188,7 @@ The scheduler:
 
 ## 8. Security Model
 
-- Passwords: scrypt (64-byte derived key + per-user salt), never logged, never sent to the client. Seeded passwords are random temporary values and must be changed at first sign-in; no universal password can authenticate as another account.
+- Passwords: scrypt (64-byte derived key + per-user salt), never logged, never sent to the client.
 - Brute-force protection: login and password-reset attempts are rate-limited per IP + username (10 sign-in attempts / 15 min; 6 reset attempts / 15 min) with clear 429 responses.
 - Business codes (CL-0001, AGS-ORD-0001, …) are generated from the highest existing sequence — deleting records can never cause duplicate-code failures — and creation retries automatically under concurrency.
 - Sessions: opaque 256-bit tokens; only SHA-256 hashes stored in the DB; httpOnly/SameSite cookies; 7-day expiry; invalidated on password change.
@@ -211,7 +222,7 @@ prisma/schema.prisma       # 26 tables: users, sessions, clients, orders, tasks,
                            # maintenance_plans/subscriptions/invoices/payments/
                            # tickets/activity_logs
 prisma/seed.ts             # secure account + package seeding
-prisma/reset-passwords.ts  # regenerate the 3 account passwords
+prisma/reset-passwords.ts  # regenerate the 3 team account passwords
 prisma/cleanup.ts          # test-data wipe + credential restore
 src/lib/                   # auth, permissions matrix, helpers, i18n, store
 src/app/api/               # ~40 secured API routes
@@ -244,7 +255,7 @@ Each member can upload their own photo in *Settings → My profile* (hover the a
 - `tsc --noEmit` — **0 errors** (strict; `ignoreBuildErrors` is OFF so type errors fail the build)
 - `eslint` — **0 errors, 0 warnings**
 - Production build (`next build`) — **verified**, standalone output boots, serves the login page, authenticates, and returns live data from the database
-- **Automated API test suite — 34 tests / 83 assertions, all passing** (`bun run test`): authentication & rate limiting, all six permission boundaries, the full client → order → invoice → payment workflow with persistence checks, expense approval, content-based upload security, cross-user file access denial, attendance duplicate guard, team creation, single-use reset codes, scheduler key auth, and JSON error hygiene. Runs against an isolated test database — the working database is never touched.
+- **Automated API test suite — 34 tests / 83 assertions, all passing** (`npm run test`): authentication & rate limiting, all six permission boundaries, the full client → order → invoice → payment workflow with persistence checks, expense approval, content-based upload security, cross-user file access denial, attendance duplicate guard, team creation, single-use reset codes, scheduler key auth, and JSON error hygiene. Runs against an isolated test database — the working database is never touched.
 - All 13 modules browser-tested end-to-end (create/edit/persist, role restrictions 401/403, rate limiting, PDF/CSV exports, mobile 390 px, Arabic RTL)
 
 ## 15. Credential Rotation & Delivery Hygiene
@@ -252,11 +263,11 @@ Each member can upload their own photo in *Settings → My profile* (hover the a
 If credentials were ever exposed (leaked file, shared ZIP, laptop compromise), rotate them:
 
 ```bash
-bunx tsx prisma/reset-passwords.ts   # new random passwords → CREDENTIALS.txt
+npx tsx prisma/reset-passwords.ts   # new random passwords → CREDENTIALS.txt
                                      # destroys ALL sessions, forces first-login change
 ```
 
-The clean delivery package intentionally contains **no** `CREDENTIALS.txt`, **no** database file, **no** uploaded files and **no** logs — the client generates their own credentials on first setup (`bun run db:push` + `bun run db:seed`).
+The clean delivery package intentionally contains **no** `CREDENTIALS.txt`, **no** database file, **no** uploaded files and **no** logs — the client generates their own credentials on first setup (`npm run db:push` + `npm run db:seed`).
 
 Never commit secrets: `.gitignore` excludes `CREDENTIALS.txt`, `.env`, `db/` databases & runtime storage, `upload/`, logs and backups. `.env.example` documents every variable with placeholder values only.
 
@@ -265,8 +276,8 @@ Never commit secrets: `.gitignore` excludes `CREDENTIALS.txt`, `.env`, `db/` dat
 For client demos you can populate a **fresh** database with clearly-fictional records (three `[DEMO]`-tagged clients with an order, invoice, payments, an expense awaiting approval, a maintenance subscription with a paid invoice and an open ticket):
 
 ```bash
-bun run db:demo           # insert demo data (refuses if real clients exist)
-bun run db:demo-remove    # remove exactly the [DEMO]-tagged records
+npm run db:demo           # insert demo data (refuses if real clients exist)
+npm run db:demo-remove    # remove exactly the [DEMO]-tagged records
 ```
 
 All names, phones, e-mails and domains are fake (`example.com`, `+966 5X 000 00XX`). The script refuses to run when the database already contains real client data.

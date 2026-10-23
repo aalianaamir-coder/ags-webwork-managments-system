@@ -33,9 +33,14 @@ export default function DashboardView() {
     ;(async () => {
       try {
         const res = await api<Dash>('/api/dashboard')
-        if (!cancelled) {
-          setData(res)
-          setRevenueSeries((res.revenueSeries as { month: string; revenue: number; expenses: number }[] | undefined) ?? [])
+        if (!cancelled) setData(res)
+        // revenue chart for admin/accountant — reuse reports endpoint lightly
+        if (res.role === 'ADMIN') {
+          try {
+            const rep = await api<{ revenueByMonth: { month: string; value: number }[]; expensesByMonth: { month: string; value: number }[] }>('/api/reports')
+            const merged = rep.revenueByMonth.map((r, i) => ({ month: r.month, revenue: r.value, expenses: rep.expensesByMonth[i]?.value ?? 0 }))
+            if (!cancelled) setRevenueSeries(merged.slice(-12))
+          } catch { /* optional */ }
         }
       } finally {
         if (!cancelled) setLoading(false)

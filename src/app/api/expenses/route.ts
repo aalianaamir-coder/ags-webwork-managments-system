@@ -89,9 +89,9 @@ export const POST = handler(async (req: Request) => {
     entityId: expense.id,
     summary: `Expense recorded: ${expense.expenseCode} — SAR ${amount.toFixed(2)} (${category}) — awaiting CEO approval`,
   });
-  // Notify admins about the pending approval
+  // Notify admins about the pending approval (hidden system accounts excluded)
   const admins = await db.user.findMany({
-    where: { role: "ADMIN", isActive: true },
+    where: { role: "ADMIN", isActive: true, hidden: false },
   });
   for (const a of admins) {
     if (a.id !== user.id) {
